@@ -1,16 +1,15 @@
-import os
 import re
 import logging
 import json
 from pathlib import Path
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from openai import OpenAI
 import dotenv
 
 dotenv.load_dotenv()
-    
+
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("EnterpriseExtractor")
 
@@ -20,48 +19,141 @@ logger = logging.getLogger("EnterpriseExtractor")
 # ============================================================
 
 class IDNumber(BaseModel):
-    type: Optional[str]
-    number: Optional[str]
+    type: str = Field(..., description="The type of ID (e.g., 'National ID', 'Passport', 'SSN', 'Tax ID', 'Driver License').")
+    number: str = Field(..., description="The alphanumeric string representing the identification number.")
 
-class DateRange(BaseModel):
-    location: Optional[str]
-    from_date: Optional[str]
-    to_date: Optional[str]
+class Location(BaseModel):
+    location: str = Field( ..., description="The address, city, country, or region name.")
+    start_date: Optional[str] = Field(default=None, description="The date when the entity began association with this location (ISO 8601 format: YYYY-MM-DD).")
+    end_date: Optional[str] = Field(default=None, description="The date when the entity ended association with this location (ISO 8601 format: YYYY-MM-DD).")
 
-class Role(BaseModel):
-    role: Optional[str]
-    from_date: Optional[str]
-    to_date: Optional[str]
+class Occupation(BaseModel):
+    """
+    Details regarding a professional role or job position held by an entity.
+    """
+    title: str = Field(..., description="The job title or role name (e.g., 'CEO', 'Director', 'Software Engineer').")
+    institution: str = Field(...,  description="The name of the company, organization, or institution where this role was held.")
+    start_date: Optional[str] = Field(default=None, description="The start date of the employment (ISO 8601 format).")
+    end_date: Optional[str] = Field(default=None, description="The end date of the employment (ISO 8601 format).")
 
-class Associate(BaseModel):
+class Relation(BaseModel):
     relationship: Optional[str]
     name: Optional[str]
 
-class Article(BaseModel):
-    headline: str
-    content: str
-    date: str
-    source: Optional[str]
-    url: Optional[str]
-
 class EntityProfile(BaseModel):
-    type: str
-    primary_name: str
-    aliases: List[str] = []
-    gender: Optional[str] = None
-    date_of_birth: List[str] = []
-    citizenship: List[str] = []
-    place_of_birth: Optional[str] = None
-    decease: Optional[str] = None
-    id_numbers: List[IDNumber] = []
-    domicile: List[DateRange] = []
-    address: List[DateRange] = []
-    roles_primary_occupation: List[Role] = []
-    roles_history_occupation: List[Role] = []
-    associate_entities: List[Associate] = []
-    date_of_incorporation: Optional[str] = None
-    country_of_incorporation: Optional[str] = None
-    country_of_affiliation: Optional[str] = None
+    """
+    A comprehensive profile of a legal entity or natural person, containing biographical and professional details.
+    """
+    type: List[str] = Field(
+        default=[], 
+        description="The classification of the entity (e.g., 'Person', 'Organization').",
+        json_schema_extra={"examples": [["Person"], ["Organization"]]},
+    )
+    primary_name: List[str] = Field(
+        default=[], 
+        description="The official or legal name(s) of the Person/Organization.",
+        json_schema_extra={"examples": [["John Michael Smith"], ["Acme Corporation Ltd"]]},
+    )
+    aliases: List[str] = Field(
+        default=[], 
+        description="Alternative names, nicknames, trading names, or 'Doing Business As' (DBA) names.",
+        json_schema_extra={"examples": [["Johnny", "J.M. Smith"], ["Acme Corp", "Acme Inc"]]},
+    )
+    gender: List[str] = Field(
+        default=[], 
+        description="If entity type is a person, the gender of the person.",
+        json_schema_extra={"examples": [["Male"], ["Female"], ["Unknown"]]},
+    )
+    date_of_birth: List[str] = Field(
+        default=[], 
+        description="If entity type is a person, the date of birth of the person in ISO 8601 format (YYYY-MM-DD).",
+        json_schema_extra={"examples": [["1985-03-15"], ["1990-12-01"]]},
+    )
+    citizenship: List[str] = Field(
+        default=[], 
+        description="If entity type is a person, countries where the person holds citizenship or nationality.",
+        json_schema_extra={"examples": [["United States", "Canada"], ["United Kingdom"]]}
+    )
+    place_of_birth: List[str] = Field(
+        default=[], 
+        description="If entity type is a person, city and country where the person was born.",
+        json_schema_extra={"examples": [["New York, United States"], ["London, United Kingdom"]]}
+    )
+    deceased: List[bool] = Field(
+        default=[], 
+        description="If entity type is a person, indication if the person is deceased, or date of death.",
+        json_schema_extra={"examples": [[True], [False]]}
+    )
+    id_numbers: List[IDNumber] = Field(
+        default=[], 
+        description="If entity type is a person, a list of identification documents that are owned by the subject.",
+        json_schema_extra={"examples": [[{"type": "Passport", "number": "ABC123"}]]}
+    )
+    domicile: List[Location] = Field(
+        default=[], 
+        description="If entity type is a person, the legal home or permanent residence of the person.",
+        json_schema_extra={"examples": [[{"location": "London, UK", "start_date": "2020-01-01", "end_date": "2024-12-31"}]]}
+    )
+    addresses: List[Location] = Field(
+        default=[], 
+        description="If entity type is a person, known physical addresses associated with the person.",
+        json_schema_extra={"examples": [[{"location": "123 Main St, New York, NY", "start_date": "2018-06-01", "end_date": "2022-08-15"}]]}
+    )
+    roles_primary_occupation: List[Occupation] = Field(
+        default=[], 
+        description="If entity type is a person, the current or most significant professional roles/employment held by the person.",
+        json_schema_extra={"examples": [[{"title": "CEO", "institution": "Tech Corp", "start_date": "2020-01-01", "end_date": "2024-12-31"}]]}
+    )
+    roles_history_occupation: List[Occupation] = Field(
+        default=[], 
+        description="If entity type is a person, past employment history of the person.",
+        json_schema_extra={"examples": [[{"title": "Manager", "institution": "Old Company", "start_date": "2015-03-01", "end_date": "2019-12-31"}]]}
+    )
+    associated_entities: List[Relation] = Field(
+        default=[],
+        description="Companies or organizations linked to the person.",
+        json_schema_extra={"examples": [[{"name": "Subsidiary Inc", "relation": "Parent Company"}]]}
+    )
+    associated_persons: List[Relation] = Field(
+        default=[], 
+        description="Natural persons (family, business partners) linked to the person. The relation field describes the nature of the relationship.",
+        json_schema_extra={"examples": [[{"name": "Jane Doe", "relation": "Spouse"}, {"name": "Bob Smith", "relation": "Business Partner"}]]}
+    )
+    date_of_incorporation: List[str] = Field(
+        default=[], 
+        description="If entity type is a company/organization, the date it was legally formed.",
+        json_schema_extra={"examples": [["2010-06-15"], ["1995-01-20"]]}
+    )
+    country_of_incorporation: List[str] = Field(
+        default=[], 
+        description="If entity type is a company/organization, the jurisdiction under whose laws it was formed.",
+        json_schema_extra={"examples": [["Delaware, United States"], ["Cayman Islands"]]}
+    )
+    country_of_affiliation: List[str] = Field(
+        default=[], 
+        description="If entity type is a company/organization, countries where the entity operates or has significant ties.",
+        json_schema_extra={"examples": [["United States", "United Kingdom", "Singapore"]]}
+    )
+    local_name: List[str] = Field(
+        default=[],
+        description="The name of the entity in its local language/script.",
+    )
+    marital_status: List[str] = Field(
+        default=[],
+        description="Marital status of the person.",
+        json_schema_extra={"examples": [["Single"], ["Married"]]}
+    )
+    
+class Media(BaseModel):
+    """
+    A structured representation of a news article mentioning the entity, containing key details for analysis.
+    """
+    headline: str = Field(..., description="The headline of the news article mentioning the entity.")
+    content: str = Field(..., description="The full text content of the news article mentioning the entity.")
+    date: str = Field(..., description="The publication date of the news article in ISO 8601 format (YYYY-MM-DD).")
+    source: str = Field(..., description="The source or publisher of the news article.")
+    url: Optional[str] = Field(default=None, description="The URL link to the news article. Omit or set null if not present.")
+    themes: List[str] = Field(default_factory=list, description="Key themes or topics associated with the news article (e.g., 'Bribery and Corruption', 'Financial Crime', 'Predicate Crime').")
 
 # ============================================================
 # ENTERPRISE EXTRACTOR
@@ -71,7 +163,7 @@ class EnterpriseExtractor:
 
     PROFILE_CHUNK = 2500
     MAX_RETRIES = 2
-    ARTICLE_SECTION_KEYWORDS = ["FULL NEWS ARTICLES", "Full News Articles"]
+    ARTICLE_SECTION_KEYWORDS = ["FULL NEWS ARTICLES", "Full News Articles", "Full news articles"]
 
     def __init__(self,
                  extractor_model="gpt-4o-mini",
@@ -86,12 +178,12 @@ class EnterpriseExtractor:
 
     def call_llm(self, messages: List[dict], response_format):
         """Call OpenAI API with structured response parsing."""
-        response = self.client.chat.completions.create(
+        response = self.client.beta.chat.completions.parse(
             model=self.extractor_model,
             messages=messages,
             response_format=response_format
         )
-        return response.choices[0].message.content
+        return response.choices[0].message.parsed
 
     # --------------------------------------------------------
     # Split Sections
@@ -165,7 +257,7 @@ Do not hallucinate.
         return [b.strip() for b in potential_blocks if len(b.strip()) > 200]
 
     # Stage 2 — Structured Extraction (per block)
-    def extract_single_article(self, block: str) -> Optional[Article]:
+    def extract_single_article(self, block: str) -> Optional[Media]:
 
         system_prompt = """
 Extract ONE structured news article.
@@ -185,7 +277,7 @@ If block is not a valid article, return null.
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": block}
             ],
-            response_format=Article
+            response_format=Media
         )
 
         # Basic sanity check
@@ -195,7 +287,7 @@ If block is not a valid article, return null.
         return article
 
     # Stage 3 — Cross-Article Validation
-    def validate_articles(self, articles: List[Article]) -> List[Article]:
+    def validate_articles(self, articles: List[Media]) -> List[Media]:
 
         unique = {}
 
@@ -205,7 +297,7 @@ If block is not a valid article, return null.
 
         return list(unique.values())
 
-    def extract_articles(self, article_text: str) -> List[Article]:
+    def extract_articles(self, article_text: str) -> List[Media]:
 
         blocks = self.detect_article_blocks(article_text)
         articles = []
