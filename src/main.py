@@ -211,20 +211,37 @@ class EnterpriseExtractor:
             Extract full profile in a single LLM call.
             Assumes entire text is about one entity.
             """
+            
+            system_prompt =  """You are extracting structured compliance data from a watchlist risk profile section.
 
-            system_prompt = """
-    You are extracting a structured watchlist profile.
+TASK: Extract ONE EntityProfile object as a JSON object.
 
-    Rules:
-    - Extract ONLY information explicitly present.
-    - Do NOT hallucinate or infer.
-    - If a field is not present, return empty list.
-    - Ignore news articles section.
-    - Do not summarize.
-    """
+EXTRACTION RULES:
+1. DATES: Normalize to ISO 8601 (YYYY-MM-DD). If only a year is given (e.g. "1984"), keep it as "1984".
+2. ALIASES: Include all rows from the Aliases table AND all "Original script" name rows.
+3. RELATIONSHIPS TABLE: The name may be split across rows (first name in one row, last name in the next).
+   Reconstruct the full name by joining adjacent cells that form a single person's name.
+   The "Relationship" column may also span rows — join them into one phrase (e.g. "Associated Special Interest Person").
+   Put individual people in associated_persons, organizations in associated_entities.
+4. ID NUMBERS: Extract type and number from the ID numbers table. Normalize the type label to title-case (e.g. "ubs_hrn_id" → "ubs_hrn_id").
+5. WATCHLIST: Extract from the Watchlists table "Name" column. Format: "[TYPE] List Name".
+6. RELATIONSHIPS — risk_level vs risk_analysis:
+   - risk_analysis: Copy the raw "Associated Risk" cell text (e.g. "SIP, OOL", "UBR"). 
+   - risk_level: Only set to "LOW", "MEDIUM", or "HIGH" if the document explicitly states one of those words.
+     Risk-type codes such as "UBR", "SIP", "OOL", "EDD" are NOT risk levels — leave risk_level as null for those.
+7. TYPE-SPECIFIC FIELDS — set irrelevant fields to [] based on entity type:
+   - If type is "Person": set date_of_incorporation, country_of_incorporation, country_of_affiliation to [].
+   - If type is "Organization": set gender, citizenship, place_of_birth, deceased, domicile,
+     roles_primary_occupation, roles_history_occupation, marital_status to [].
+8. If a field has no data, use [] — never null, never omit the field.
+9. Do NOT extract data from "Assessment activity" (rows with "New evidence by...").
+10. Do NOT fabricate any data not explicitly in the text.
+
+OUTPUT: A single JSON object only, no surrounding text.
+"""
     
             user_prompt = f"""
-            Source Text:
+            SOURCE TEXT:
             {text}
             """
 
@@ -259,25 +276,29 @@ class EnterpriseExtractor:
         if not article_text.strip():
             return []
 
-        system_prompt = """
-Extract ALL distinct news articles from the provided text.
-For each article, extract:
-- headline: The article title
-- content: The full article text
-- date: Publication date in YYYY-MM-DD format
-- source: The news outlet/publisher
-- url: Article URL if present
-- themes: Key topics (e.g., "Financial Crime", "Bribery and Corruption")
+        system_prompt = f"""You are extracting structured news article data from a compliance report's news section.
 
-Rules:
-- Extract ONLY complete, distinct articles
-- Do NOT create duplicates or break articles into pieces
-- Do NOT hallucinate or infer information not explicitly stated
-- Return empty list if no valid articles found
+TASK: Extract EVERY news article found as a JSON array of article objects.
+
+EXTRACTION RULES:
+1. headline: The article's heading (the ## heading line at the start of each article).
+2. content: The first 2–3 sentences of the article body text only. 
+   Do NOT include standalone theme labels (e.g. lines like "Financial Crime" or "Bribery and Corruption, Financial Crime").
+3. date: Publication date in ISO 8601 (YYYY-MM-DD). Parse from "published DD Mon YYYY" or "DD Sep YYYY" patterns.
+4. source: Publisher name from the "Source: <name>" line. Strip the date part.
+5. url: Extract the URL for each article from its own content (e.g. a line starting with "http" or a labelled "URL:" field within the article).
+   If no URL is found for an article, omit the field or set it to null.
+6. themes: Collect ALL standalone theme label lines within the article body 
+   (e.g. a line "Bribery and Corruption, Financial Crime" → ["Bribery and Corruption", "Financial Crime"]).
+   Split comma-separated themes into individual strings.
+7. Each article starts at a new ## heading. Do not merge articles.
+8. one object per article
+
+OUTPUT: A JSON array [...] only, no surrounding text.
 """
 
         user_prompt = f"""
-Source text:
+SOURCE TEXT:
 {article_text}
 """
 
