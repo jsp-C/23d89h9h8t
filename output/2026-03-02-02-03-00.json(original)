@@ -1,0 +1,44 @@
+{
+  "watchlist_data": {
+    "type": "Person",
+    "primary_name": "fang liu",
+    "aliases": [
+      "\u5289\u82b3\u5747",
+      "Fangjun Liu",
+      "\u5218\u82b3\u5747",
+      "\u5289\u82b3",
+      "\u5218\u82b3"
+    ],
+    "gender": "Male",
+    "date_of_birth": [
+      "1985",
+      "1989",
+      "34",
+      "1984"
+    ],
+    "citizenship": [
+      "China"
+    ],
+    "place_of_birth": null,
+    "decease": null,
+    "id_numbers": [
+      {
+        "type": "ubs_hrn_id",
+        "number": "F_11946904"
+      },
+      {
+        "type": "Ubs hrn id",
+        "number": "F_11946904"
+      }
+    ],
+    "domicile": [],
+    "address": [],
+    "roles_primary_occupation": [],
+    "roles_history_occupation": [],
+    "associate_entities": [],
+    "date_of_incorporation": null,
+    "country_of_incorporation": null,
+    "country_of_affiliation": null
+  },
+  "media_data": []
+}

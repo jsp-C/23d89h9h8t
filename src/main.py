@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 from openai import OpenAI
+from bs4 import BeautifulSoup
 import dotenv
 
 dotenv.load_dotenv()
@@ -195,6 +196,11 @@ class EnterpriseExtractor:
     # Split Sections
     # --------------------------------------------------------
 
+    def strip_html_tags(self, text: str) -> str:
+        """Remove HTML tags from text using BeautifulSoup."""
+        soup = BeautifulSoup(text, 'html.parser')
+        return soup.get_text()
+
     def split_sections(self, text: str):
         for kw in self.ARTICLE_SECTION_KEYWORDS:
             match = re.search(kw, text)
@@ -243,6 +249,9 @@ OUTPUT: A single JSON object only, no surrounding text.
             user_prompt = f"""
             SOURCE TEXT:
             {text}
+            
+            SCHEMA:
+            {EntityProfile.model_json_schema()}
             """
 
             last_exception = None
@@ -300,6 +309,9 @@ OUTPUT: A JSON array [...] only, no surrounding text.
         user_prompt = f"""
 SOURCE TEXT:
 {article_text}
+
+SCHEMA:
+{MediaCollection.model_json_schema()}
 """
 
         response = self.call_llm(
@@ -346,9 +358,11 @@ if __name__ == "__main__":
     asset_json = json.loads(text)
     
     full_content = "".join([page["page_text"] for page in asset_json])
-
+    
+    # Remove HTML tags from content
     extractor = EnterpriseExtractor()
-    result = extractor.run(full_content)
+    clean_content = extractor.strip_html_tags(full_content)
+    result = extractor.run(clean_content)
 
     # Create output folder if it doesn't exist
     output_dir = Path(__file__).parent.parent / "output"

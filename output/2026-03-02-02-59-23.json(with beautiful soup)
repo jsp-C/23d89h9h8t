@@ -1,0 +1,62 @@
+{
+  "watchlist_data": {
+    "type": [
+      "Person"
+    ],
+    "primary_name": [
+      "Fang Liu"
+    ],
+    "aliases": [
+      "Fangjun Liu",
+      "\u5218\u82b3",
+      "\u5218\u82b3\u5747",
+      "\u5289\u82b3",
+      "\u5289\u82b3\u5747"
+    ],
+    "gender": [
+      "Female"
+    ],
+    "date_of_birth": [
+      "1984",
+      "1985"
+    ],
+    "citizenship": [
+      "China"
+    ],
+    "place_of_birth": [],
+    "deceased": [
+      false
+    ],
+    "id_numbers": [
+      {
+        "type": "Ubs Hrn Id",
+        "number": "F_11946904"
+      }
+    ],
+    "domicile": [
+      {
+        "location": "Hong Kong",
+        "start_date": null,
+        "end_date": null
+      }
+    ],
+    "addresses": [],
+    "roles_primary_occupation": [],
+    "roles_history_occupation": [],
+    "associated_entities": [
+      {
+        "relationship": "Associated Special Interest Person",
+        "name": "Weifeng"
+      }
+    ],
+    "associated_persons": [],
+    "date_of_incorporation": [],
+    "country_of_incorporation": [],
+    "country_of_affiliation": [
+      "Hong Kong"
+    ],
+    "local_name": [],
+    "marital_status": []
+  },
+  "media_data": []
+}

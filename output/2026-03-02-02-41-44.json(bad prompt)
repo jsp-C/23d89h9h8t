@@ -1,0 +1,89 @@
+{
+  "watchlist_data": {
+    "type": [
+      "Person"
+    ],
+    "primary_name": [
+      "Fang Liu"
+    ],
+    "aliases": [
+      "Fangjun Liu",
+      "\u5218\u82b3",
+      "\u5218\u82b3\u5747",
+      "\u5289\u82b3",
+      "\u5289\u82b3\u5747"
+    ],
+    "gender": [
+      "Male"
+    ],
+    "date_of_birth": [
+      "1984",
+      "1985"
+    ],
+    "citizenship": [
+      "China"
+    ],
+    "place_of_birth": [],
+    "deceased": [
+      false
+    ],
+    "id_numbers": [
+      {
+        "type": "Ubs hrn id",
+        "number": "F_11946904"
+      }
+    ],
+    "domicile": [
+      {
+        "location": "Hong Kong",
+        "start_date": null,
+        "end_date": null
+      }
+    ],
+    "addresses": [],
+    "roles_primary_occupation": [],
+    "roles_history_occupation": [],
+    "associated_entities": [],
+    "associated_persons": [
+      {
+        "relationship": "Associated Special",
+        "name": "Weifeng"
+      },
+      {
+        "relationship": "Interest Person",
+        "name": "Tang"
+      }
+    ],
+    "date_of_incorporation": [],
+    "country_of_incorporation": [],
+    "country_of_affiliation": [],
+    "local_name": [],
+    "marital_status": []
+  },
+  "media_data": [
+    {
+      "headline": "Hong Kong court jails woman for using fake death certificate of business partner to claim HK$5 million from insurance company",
+      "content": "A local court has jailed a woman from mainland China for 25 months for attempting to bilk a Hong Kong insurance company out of HK$5 million (US$639,000) using a forged death certificate. Liu Fang, 34, admitted to filing two death claims with Dah Sing Life Insurance Company on June 3, 2016, and projected herself as the beneficiary of the death of her insured business partner, who was actually alive. But the insurance company refused to grant Liu the benefits she sought as she failed to provide the medical records of her business partner. Later, an investigation by the city's anti-corruption watchdog found that the death certificates submitted by Liu were fake, and the man, who was supposed to be deceased, was still alive the following year. The woman on Tuesday pleaded guilty to one count of conspiracy to defraud at the District Court. Judge Ernest Michael Lin Kam-hung sentenced her on Tuesday and said she had dealt a blow to the local insurance industry. In May 2016, Liu met her business partner Hou Zhenlian and an insurance agent from Dah Sing in mainland China to discuss plans to deceive the company. She obtained fake death certificates for Hou from his colleagues, which claimed he had died of heart failure and was buried four days after his death. She also applied to the mainland police to rescind his household registration. In mitigation, the defence counsel said Liu was persuaded by the insurance agent to take part in the fraud, and that she did not mastermind the offence, but Lin rejected the claim. \"The defendant was at the centre of the cross-border syndicate, which executed a premeditated scheme to defraud,\" Lin said. Lin noted that her scheme would have had implications for the city's relationship with the mainland if she succeeded. It would also have added to the financial burden of insurance companies to inspect fake claims - a price which would eventually be borne by clients. He said the seriousness of this case warranted a deterrent sentence, but he decided to reduce her jail term given her guilty plea and pregnancy.",
+      "date": "2019-09-17",
+      "source": "South China Morning Post Publishers Limited",
+      "url": null,
+      "themes": [
+        "Corporate Malfeasance",
+        "Bribery and Corruption",
+        "Financial Crime",
+        "Predicate Crime"
+      ]
+    },
+    {
+      "headline": "Story of fake death unfolds",
+      "content": "A mainland woman has admitted being in a scam to defraud an insurer by faking a death. Liu Fang, 34, who is six months pregnant, appeared before District Court Judge Ernest Lin Kam-hung yesterday. He heard Dah Sing Insurance received two insurance purchases in the name of mainlander Hou Zhenlian from agent Tong Wai-fung in 2015. And Liu would collect over HK$5 million if Hou died. In May 2016, Liu met with Hou and Tong in Shanxi and they agreed to fake Hou's death. That involved a death certificate from Hou's employer, Yuci Electric Power Supply. Soon after, Liu received a certificate stating Hou died of cardiac arrest on May 26, 2016. Liu then traveled to Hong Kong with Tong to claim from Dah Sing. But the insurer ruled the claim invalid because of a flaw in Hou's medical record. Then the Independent Commission Against Corruption found Hou's employer did not issue a death certificate. And colleagues of Hou said they had seen him a year after he supposedly died. In mitigation, a lawyer said Liu managed a business for Hou. But when it ran into difficulties Tong persuaded the pair to fake Hou's death. The judge said Liu faced a prison term and remanded her in custody to September 17.",
+      "date": "2019-08-22",
+      "source": "The Standard Newspapers Limited",
+      "url": null,
+      "themes": [
+        "Bribery and Corruption",
+        "Financial Crime"
+      ]
+    }
+  ]
+}

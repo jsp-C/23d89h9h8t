@@ -1,0 +1,93 @@
+{
+  "watchlist_data": {
+    "type": [
+      "Person"
+    ],
+    "primary_name": [
+      "Fang Liu"
+    ],
+    "aliases": [
+      "Fangjun Liu",
+      "\u5218\u82b3",
+      "\u5218\u82b3\u5747",
+      "\u5289\u82b3",
+      "\u5289\u82b3\u5747"
+    ],
+    "gender": [
+      "Male"
+    ],
+    "date_of_birth": [
+      "1984"
+    ],
+    "citizenship": [
+      "China"
+    ],
+    "place_of_birth": [],
+    "deceased": [
+      false
+    ],
+    "id_numbers": [
+      {
+        "type": "Ubs Hrn Id",
+        "number": "F_11946904"
+      }
+    ],
+    "domicile": [],
+    "addresses": [],
+    "roles_primary_occupation": [],
+    "roles_history_occupation": [],
+    "associated_entities": [
+      {
+        "relationship": "Associated Special Interest Person",
+        "name": "Weifeng"
+      },
+      {
+        "relationship": "Associated Special Interest Person",
+        "name": "Tang"
+      }
+    ],
+    "associated_persons": [],
+    "date_of_incorporation": [],
+    "country_of_incorporation": [],
+    "country_of_affiliation": [
+      "Hong Kong"
+    ],
+    "local_name": [],
+    "marital_status": []
+  },
+  "media_data": [
+    {
+      "headline": "Hong Kong court jails woman for using fake death certificate of business partner to claim HK$5 million from insurance company",
+      "content": "A local court has jailed a woman from mainland China for 25 months for attempting to bilk a Hong Kong insurance company out of HK$5 million (US$639,000) using a forged death certificate. Liu Fang, 34, admitted to filing two death claims with Dah Sing Life Insurance Company on June 3, 2016, and projected herself as the beneficiary of the death of her insured business partner, who was actually alive.",
+      "date": "2019-09-17",
+      "source": "South China Morning Post Publishers Limited",
+      "url": null,
+      "themes": [
+        "Corporate Malfeasance",
+        "Bribery and Corruption",
+        "Bribery and Corruption",
+        "Financial Crime",
+        "Predicate Crime",
+        "Bribery and Corruption",
+        "Financial Crime",
+        "Predicate Crime",
+        "Financial Crime",
+        "Predicate Crime",
+        "Bribery and Corruption"
+      ]
+    },
+    {
+      "headline": "Story of fake death unfolds",
+      "content": "A mainland woman has admitted being in a scam to defraud an insurer by faking a death. Liu Fang, 34, who is six months pregnant, appeared before District Court Judge Ernest Lin Kam-hung yesterday.",
+      "date": "2019-08-22",
+      "source": "The Standard Newspapers Limited",
+      "url": null,
+      "themes": [
+        "Bribery and Corruption",
+        "Financial Crime",
+        "Bribery and Corruption",
+        "Financial Crime"
+      ]
+    }
+  ]
+}
