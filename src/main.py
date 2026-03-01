@@ -67,7 +67,7 @@ class EntityProfile(BaseModel):
     date_of_birth: List[str] = Field(
         default=[], 
         description="If entity type is a person, the date of birth of the person in ISO 8601 format (YYYY-MM-DD).",
-        examples=[["1985-03-15"], ["1990-12-01"]],
+        examples=[["1985-03-15"], ["1990-12-01"],["1984"], ["1984-05"]],
     )
     citizenship: List[str] = Field(
         default=[], 
@@ -222,6 +222,11 @@ class EnterpriseExtractor:
     - Ignore news articles section.
     - Do not summarize.
     """
+    
+            user_prompt = f"""
+            Source Text:
+            {text}
+            """
 
             last_exception = None
 
@@ -230,7 +235,7 @@ class EnterpriseExtractor:
                     profile = self.call_llm(
                         messages=[
                             {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": text}
+                            {"role": "user", "content": user_prompt}
                         ],
                         response_format=EntityProfile
                     )
@@ -250,7 +255,6 @@ class EnterpriseExtractor:
     def extract_articles(self, article_text: str) -> List[Media]:
         """
         Extract all articles from the given text in a single LLM call.
-        Avoids chunking to prevent duplicate articles with altered content.
         """
         if not article_text.strip():
             return []
@@ -272,10 +276,15 @@ Rules:
 - Return empty list if no valid articles found
 """
 
+        user_prompt = f"""
+Source text:
+{article_text}
+"""
+
         response = self.call_llm(
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": article_text}
+                {"role": "user", "content": user_prompt}
             ],
             response_format=MediaCollection
         )
