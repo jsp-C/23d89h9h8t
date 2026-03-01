@@ -155,6 +155,12 @@ class Media(BaseModel):
     url: Optional[str] = Field(default=None, description="The URL link to the news article. Omit or set null if not present.")
     themes: List[str] = Field(default_factory=list, description="Key themes or topics associated with the news article", examples=[["Bribery and Corruption"], ["Financial Crime"], ["Predicate Crime"]])
 
+class MediaCollection(BaseModel):
+    """
+    A collection of news articles extracted from a document.
+    """
+    articles: List[Media] = Field(default_factory=list, description="List of news articles found in the text.")
+
 # ============================================================
 # ENTERPRISE EXTRACTOR
 # ============================================================
@@ -241,72 +247,40 @@ class EnterpriseExtractor:
     # TIER-1 ARTICLE PIPELINE
     # ========================================================
 
-    # Stage 1 — Boundary Detection
-    def detect_article_blocks(self, article_text: str) -> List[str]:
-
+    def extract_articles(self, article_text: str) -> List[Media]:
+        """
+        Extract all articles from the given text in a single LLM call.
+        Avoids chunking to prevent duplicate articles with altered content.
+        """
         if not article_text.strip():
             return []
 
-        # Simple heuristic: split by double newline or headline-like patterns
-        potential_blocks = re.split(r"\n\s*\n", article_text)
-
-        # Filter very small blocks
-        return [b.strip() for b in potential_blocks if len(b.strip()) > 200]
-
-    # Stage 2 — Structured Extraction (per block)
-    def extract_single_article(self, block: str) -> Optional[Media]:
-
         system_prompt = """
-Extract ONE structured news article.
-Required:
-- headline
-- content
-- date
-Optional:
-- source
-- url
-Do not hallucinate.
-If block is not a valid article, return null.
+Extract ALL distinct news articles from the provided text.
+For each article, extract:
+- headline: The article title
+- content: The full article text
+- date: Publication date in YYYY-MM-DD format
+- source: The news outlet/publisher
+- url: Article URL if present
+- themes: Key topics (e.g., "Financial Crime", "Bribery and Corruption")
+
+Rules:
+- Extract ONLY complete, distinct articles
+- Do NOT create duplicates or break articles into pieces
+- Do NOT hallucinate or infer information not explicitly stated
+- Return empty list if no valid articles found
 """
 
-        article = self.call_llm(
+        response = self.call_llm(
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": block}
+                {"role": "user", "content": article_text}
             ],
-            response_format=Media
+            response_format=MediaCollection
         )
 
-        # Basic sanity check
-        if not article.headline or not article.date:
-            return None
-
-        return article
-
-    # Stage 3 — Cross-Article Validation
-    def validate_articles(self, articles: List[Media]) -> List[Media]:
-
-        unique = {}
-
-        for article in articles:
-            key = (article.headline.strip(), article.date.strip())
-            unique[key] = article
-
-        return list(unique.values())
-
-    def extract_articles(self, article_text: str) -> List[Media]:
-
-        blocks = self.detect_article_blocks(article_text)
-        articles = []
-
-        for block in blocks:
-            for _ in range(self.MAX_RETRIES):
-                article = self.extract_single_article(block)
-                if article:
-                    articles.append(article)
-                    break
-
-        return self.validate_articles(articles)
+        return response.articles if response.articles else []
 
     # ========================================================
     # FINAL OUTPUT
