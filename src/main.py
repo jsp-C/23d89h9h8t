@@ -197,48 +197,45 @@ class EnterpriseExtractor:
         return text, ""
 
     # --------------------------------------------------------
-    # PROFILE EXTRACTION (chunked)
+    # PROFILE EXTRACTION
     # --------------------------------------------------------
 
-    def chunk(self, text: str, size: int):
-        return [text[i:i+size] for i in range(0, len(text), size)]
-
-    def extract_profile_chunk(self, chunk: str) -> EntityProfile:
-
-        system_prompt = """
-Extract ONLY entity profile fields.
-Ignore news content.
-Do not hallucinate.
-"""
-
-        return self.call_llm(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": chunk}
-            ],
-            response_format=EntityProfile
-        )
-
     def extract_profile(self, text: str) -> EntityProfile:
-        chunks = self.chunk(text, self.PROFILE_CHUNK)
-        profiles = []
+            """
+            Extract full profile in a single LLM call.
+            Assumes entire text is about one entity.
+            """
 
-        for chunk in chunks:
+            system_prompt = """
+    You are extracting a structured watchlist profile.
+
+    Rules:
+    - Extract ONLY information explicitly present.
+    - Do NOT hallucinate or infer.
+    - If a field is not present, return empty list.
+    - Ignore news articles section.
+    - Do not summarize.
+    """
+
+            last_exception = None
+
             for _ in range(self.MAX_RETRIES):
-                p = self.extract_profile_chunk(chunk)
-                profiles.append(p)
+                try:
+                    profile = self.call_llm(
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": text}
+                        ],
+                        response_format=EntityProfile
+                    )
 
-        if not profiles:
-            raise ValueError("Profile extraction failed")
+                    return profile
 
-        base = profiles[0]
-        for p in profiles[1:]:
-            base.aliases = list(set(base.aliases + p.aliases))
-            base.date_of_birth = list(set(base.date_of_birth + p.date_of_birth))
-            base.citizenship = list(set(base.citizenship + p.citizenship))
-            base.id_numbers.extend([x for x in p.id_numbers if x not in base.id_numbers])
+                except Exception as e:
+                    last_exception = e
+                    logger.warning(f"Profile extraction retry due to error: {e}")
 
-        return base
+            raise ValueError(f"Profile extraction failed after retries: {last_exception}")
 
     # ========================================================
     # TIER-1 ARTICLE PIPELINE
@@ -333,6 +330,10 @@ If block is not a valid article, return null.
 # ============================================================
 
 if __name__ == "__main__":
+    # Print JSON schema for reference
+    # import json
+    # print(json.dumps(EntityProfile.model_json_schema(), indent=2))
+
 
     asset_file = Path(__file__).parent.parent / "assets" / "raw1.json"
     with open(asset_file, "r", encoding="utf-8") as f:
