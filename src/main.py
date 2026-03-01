@@ -47,92 +47,92 @@ class EntityProfile(BaseModel):
     type: List[str] = Field(
         default=[], 
         description="The classification of the entity (e.g., 'Person', 'Organization').",
-        json_schema_extra={"examples": [["Person"], ["Organization"]]},
+        examples=[["Person"], ["Organization"]],
     )
     primary_name: List[str] = Field(
         default=[], 
         description="The official or legal name(s) of the Person/Organization.",
-        json_schema_extra={"examples": [["John Michael Smith"], ["Acme Corporation Ltd"]]},
+        examples=[["John Michael Smith"], ["Acme Corporation Ltd"]],
     )
     aliases: List[str] = Field(
         default=[], 
         description="Alternative names, nicknames, trading names, or 'Doing Business As' (DBA) names.",
-        json_schema_extra={"examples": [["Johnny", "J.M. Smith"], ["Acme Corp", "Acme Inc"]]},
+        examples=[["Johnny", "J.M. Smith"], ["Acme Corp", "Acme Inc"]],
     )
     gender: List[str] = Field(
         default=[], 
         description="If entity type is a person, the gender of the person.",
-        json_schema_extra={"examples": [["Male"], ["Female"], ["Unknown"]]},
+        examples=[["Male"], ["Female"], ["Unknown"]],
     )
     date_of_birth: List[str] = Field(
         default=[], 
         description="If entity type is a person, the date of birth of the person in ISO 8601 format (YYYY-MM-DD).",
-        json_schema_extra={"examples": [["1985-03-15"], ["1990-12-01"]]},
+        examples=[["1985-03-15"], ["1990-12-01"]],
     )
     citizenship: List[str] = Field(
         default=[], 
         description="If entity type is a person, countries where the person holds citizenship or nationality.",
-        json_schema_extra={"examples": [["United States", "Canada"], ["United Kingdom"]]}
+        examples=[["United States", "Canada"], ["United Kingdom"]]
     )
     place_of_birth: List[str] = Field(
         default=[], 
         description="If entity type is a person, city and country where the person was born.",
-        json_schema_extra={"examples": [["New York, United States"], ["London, United Kingdom"]]}
+        examples=[["New York, United States"], ["London, United Kingdom"]]
     )
     deceased: List[bool] = Field(
         default=[], 
         description="If entity type is a person, indication if the person is deceased, or date of death.",
-        json_schema_extra={"examples": [[True], [False]]}
+        examples=[[True], [False]]
     )
     id_numbers: List[IDNumber] = Field(
         default=[], 
         description="If entity type is a person, a list of identification documents that are owned by the subject.",
-        json_schema_extra={"examples": [[{"type": "Passport", "number": "ABC123"}]]}
+        examples=[[{"type": "Passport", "number": "ABC123"}]]
     )
     domicile: List[Location] = Field(
         default=[], 
         description="If entity type is a person, the legal home or permanent residence of the person.",
-        json_schema_extra={"examples": [[{"location": "London, UK", "start_date": "2020-01-01", "end_date": "2024-12-31"}]]}
+        examples=[[{"location": "London, UK", "start_date": "2020-01-01", "end_date": "2024-12-31"}]]
     )
     addresses: List[Location] = Field(
         default=[], 
         description="If entity type is a person, known physical addresses associated with the person.",
-        json_schema_extra={"examples": [[{"location": "123 Main St, New York, NY", "start_date": "2018-06-01", "end_date": "2022-08-15"}]]}
+        examples=[[{"location": "123 Main St, New York, NY", "start_date": "2018-06-01", "end_date": "2022-08-15"}]]
     )
     roles_primary_occupation: List[Occupation] = Field(
         default=[], 
         description="If entity type is a person, the current or most significant professional roles/employment held by the person.",
-        json_schema_extra={"examples": [[{"title": "CEO", "institution": "Tech Corp", "start_date": "2020-01-01", "end_date": "2024-12-31"}]]}
+        examples=[[{"title": "CEO", "institution": "Tech Corp", "start_date": "2020-01-01", "end_date": "2024-12-31"}]]
     )
     roles_history_occupation: List[Occupation] = Field(
         default=[], 
         description="If entity type is a person, past employment history of the person.",
-        json_schema_extra={"examples": [[{"title": "Manager", "institution": "Old Company", "start_date": "2015-03-01", "end_date": "2019-12-31"}]]}
+        examples=[[{"title": "Manager", "institution": "Old Company", "start_date": "2015-03-01", "end_date": "2019-12-31"}]]
     )
     associated_entities: List[Relation] = Field(
         default=[],
         description="Companies or organizations linked to the person.",
-        json_schema_extra={"examples": [[{"name": "Subsidiary Inc", "relation": "Parent Company"}]]}
+        examples=[[{"name": "Subsidiary Inc", "relation": "Parent Company"}]]
     )
     associated_persons: List[Relation] = Field(
         default=[], 
         description="Natural persons (family, business partners) linked to the person. The relation field describes the nature of the relationship.",
-        json_schema_extra={"examples": [[{"name": "Jane Doe", "relation": "Spouse"}, {"name": "Bob Smith", "relation": "Business Partner"}]]}
+        examples=[[{"name": "Jane Doe", "relation": "Spouse"}, {"name": "Bob Smith", "relation": "Business Partner"}]]
     )
     date_of_incorporation: List[str] = Field(
         default=[], 
         description="If entity type is a company/organization, the date it was legally formed.",
-        json_schema_extra={"examples": [["2010-06-15"], ["1995-01-20"]]}
+        examples=[["2010-06-15"], ["1995-01-20"]]
     )
     country_of_incorporation: List[str] = Field(
         default=[], 
         description="If entity type is a company/organization, the jurisdiction under whose laws it was formed.",
-        json_schema_extra={"examples": [["Delaware, United States"], ["Cayman Islands"]]}
+        examples=[["Delaware, United States"], ["Cayman Islands"]]
     )
     country_of_affiliation: List[str] = Field(
         default=[], 
         description="If entity type is a company/organization, countries where the entity operates or has significant ties.",
-        json_schema_extra={"examples": [["United States", "United Kingdom", "Singapore"]]}
+        examples=[["United States", "United Kingdom", "Singapore"]]
     )
     local_name: List[str] = Field(
         default=[],
@@ -141,7 +141,7 @@ class EntityProfile(BaseModel):
     marital_status: List[str] = Field(
         default=[],
         description="Marital status of the person.",
-        json_schema_extra={"examples": [["Single"], ["Married"]]}
+        examples=[["Single"], ["Married"]]
     )
     
 class Media(BaseModel):
