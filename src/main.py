@@ -1,8 +1,15 @@
 import os
 import re
+import logging
+from pathlib import Path
 from typing import List, Optional
 from pydantic import BaseModel
 from openai import OpenAI
+import json
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger("EnterpriseExtractor")
+
 
 # ============================================================
 # SCHEMA (UNCHANGED)
@@ -231,11 +238,16 @@ If block is not a valid article, return null.
 
 if __name__ == "__main__":
 
-    with open("entity_pdf_text.txt", "r", encoding="utf-8") as f:
+    asset_file = Path(__file__).parent.parent / "assets" / "raw1.json"
+    with open(asset_file, "r", encoding="utf-8") as f:
         text = f.read()
+    
+    asset_json = json.loads(text)
+    
+    full_content = "".join([page["page_text"] for page in asset_json])
 
     extractor = EnterpriseExtractor()
-    result = extractor.run(text)
+    result = extractor.run(full_content)
 
     import json
     print(json.dumps(result, indent=2))
