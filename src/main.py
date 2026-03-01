@@ -19,25 +19,25 @@ logger = logging.getLogger("EnterpriseExtractor")
 # ============================================================
 
 class IDNumber(BaseModel):
-    type: str = Field(..., description="The type of ID (e.g., 'National ID', 'Passport', 'SSN', 'Tax ID', 'Driver License').")
+    type: str = Field(..., description="The type of ID.", examples=["National ID", "Passport", "SSN", "Tax ID", "Driver License"])
     number: str = Field(..., description="The alphanumeric string representing the identification number.")
 
 class Location(BaseModel):
     location: str = Field( ..., description="The address, city, country, or region name.")
-    start_date: Optional[str] = Field(default=None, description="The date when the entity began association with this location (ISO 8601 format: YYYY-MM-DD).")
-    end_date: Optional[str] = Field(default=None, description="The date when the entity ended association with this location (ISO 8601 format: YYYY-MM-DD).")
+    start_date: Optional[str] = Field(default=None, description="The date when the entity began association with this location (ISO 8601 format: YYYY-MM-DD).", examples=["2020-01-01"])
+    end_date: Optional[str] = Field(default=None, description="The date when the entity ended association with this location (ISO 8601 format: YYYY-MM-DD).", examples=["2023-12-31"])
 
 class Occupation(BaseModel):
     """
     Details regarding a professional role or job position held by an entity.
     """
-    title: str = Field(..., description="The job title or role name (e.g., 'CEO', 'Director', 'Software Engineer').")
-    institution: str = Field(...,  description="The name of the company, organization, or institution where this role was held.")
-    start_date: Optional[str] = Field(default=None, description="The start date of the employment (ISO 8601 format).")
-    end_date: Optional[str] = Field(default=None, description="The end date of the employment (ISO 8601 format).")
+    title: str = Field(..., description="The job title or role name.", examples=["CEO", "Director", "Software Engineer"])
+    institution: str = Field(...,  description="The name of the company, organization, or institution where this role was held.", examples=["Acme Corporation", "Tech Solutions Ltd"])
+    start_date: Optional[str] = Field(default=None, description="The start date of the employment (ISO 8601 format).", examples=["2020-01-01"])
+    end_date: Optional[str] = Field(default=None, description="The end date of the employment (ISO 8601 format).", examples=["2023-12-31"])
 
 class Relation(BaseModel):
-    relationship: Optional[str]
+    relationship: Optional[str] = Field(default=None, description="The type of relationship.", examples=["Parent", "Sibling", "Spouse", "Family"])
     name: Optional[str]
 
 class EntityProfile(BaseModel):
@@ -153,7 +153,7 @@ class Media(BaseModel):
     date: str = Field(..., description="The publication date of the news article in ISO 8601 format (YYYY-MM-DD).")
     source: str = Field(..., description="The source or publisher of the news article.")
     url: Optional[str] = Field(default=None, description="The URL link to the news article. Omit or set null if not present.")
-    themes: List[str] = Field(default_factory=list, description="Key themes or topics associated with the news article (e.g., 'Bribery and Corruption', 'Financial Crime', 'Predicate Crime').")
+    themes: List[str] = Field(default_factory=list, description="Key themes or topics associated with the news article", examples=[["Bribery and Corruption"], ["Financial Crime"], ["Predicate Crime"]])
 
 # ============================================================
 # ENTERPRISE EXTRACTOR
