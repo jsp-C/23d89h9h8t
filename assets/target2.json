@@ -1,0 +1,72 @@
+{
+  "id": "muf-doh-mik-qer",
+  "name": "Fang Liu",
+  "nameMatchScore": 93,
+  "flags": ["sip", "ool", "ubr"],
+  "watchlist": [
+    "[SIP] CCDI Wanted List",
+    "[SIP] CCDI (China) 100 Fugitives List",
+    "[SIP] Interpol Red Notices"
+  ],
+  "watchlist_data": [
+    {
+      "type": ["Person"],
+      "primary_name": ["Fang Liu"],
+      "aliases": ["刘芳", "劉芳"],
+      "gender": ["Female"],
+      "date_of_birth": ["1965-03-04"],
+      "citizenship": ["China"],
+      "place_of_birth": ["Shenyang, China"],
+      "deceased": ["No"],
+      "id_numbers": [
+        {
+          "type": "National ID",
+          "number": "210102196503045628"
+        },
+        {
+          "type": "Passport",
+          "number": "G4281702"
+        },
+        {
+          "type": "Passport",
+          "number": "G42817025"
+        },
+        {
+          "type": "Others",
+          "number": "W20187735"
+        },
+        {
+          "type": "ubs_hrn_id",
+          "number": "F_3447533"
+        }
+      ],
+      "domicile": [
+        {
+          "location": "United States",
+          "start_date": "",
+          "end_date": ""
+        }
+      ],
+      "addresses": [
+        {
+          "location": "LONG HILL DR. SHORT HILLS, New Jersey, United States",
+          "start_date": "",
+          "end_date": ""
+        }
+      ],
+      "roles_primary_occupation": [],
+      "roles_history_occupation": [],
+      "associated_entities": [],
+      "associated_persons": [
+        {
+          "name": "Jin Xu",
+          "relation": "Husband"
+        }
+      ],
+      "date_of_incorporation": [],
+      "country_of_incorporation": [],
+      "country_of_affiliation": []
+    }
+  ],
+  "media_data": []
+}

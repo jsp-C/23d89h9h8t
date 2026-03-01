@@ -1,0 +1,68 @@
+{
+  "id": "quv-pas-gez-qup",
+  "name": "Fang Liu",
+  "nameMatchScore": 93,
+  "flags": ["eddScap", "pep", "media", "sip"],
+  "watchlist": ["[SIP] Financial Crime"],
+  "watchlist_data": [
+    {
+      "type": ["Person"],
+      "primary_name": ["Fang Liu"],
+      "aliases": ["Fangjun Liu", "刘芳", "刘芳均", "劉芳", "劉芳均"],
+      "gender": ["Female"],
+      "date_of_birth": ["1984", "1985"],
+      "citizenship": ["China"],
+      "place_of_birth": [],
+      "deceased": ["No"],
+      "id_numbers": [
+        {
+          "type": "ubs_hrn_id",
+          "number": "F_11946904"
+        }
+      ],
+      "domicile": [
+        {
+          "location": "Hong Kong",
+          "from": "",
+          "to": ""
+        }
+      ],
+      "addresses": [],
+      "roles_primary_occupation": [],
+      "roles_history_occupation": [],
+      "associated_entities": [],
+      "associated_persons": [
+        {
+          "name": "Weifeng Tang",
+          "relation": "Associated Special Interest Person"
+        }
+      ],
+      "date_of_incorporation": [],
+      "country_of_incorporation": [],
+      "country_of_affiliation": []
+    }
+  ],
+  "media_data": [
+    {
+      "headline": "Hong Kong court jails woman for using fake death certificate of business partner to claim HK5 million from insurance company",
+      "content": "A local court has jailed a woman from mainland China for 25 months for attempting to bilk a Hong Kong insurance company out of",
+      "date": "2019-09-17",
+      "source": "South China Morning Post Publishers Limited",
+      "url": "https://nms-idd.appl.ubs.net/screening/assessment/AS-1099525/details",
+      "themes": [
+        "Corporate Malfeasance",
+        "Bribery and Corruption",
+        "Financial Crime",
+        "Predicate Crime"
+      ]
+    },
+    {
+      "headline": "Story of fake death unfolds",
+      "content": "A mainland woman has admitted being in a scam to defraud an insurer by faking a death. Liu Fang, 34, who is six months pregnant",
+      "date": "2019-08-22",
+      "source": "The Standard Newspapers Limited",
+      "url": "https://nms-idd.appl.ubs.net/screening/assessment/AS-1099525/details",
+      "themes": ["Bribery and Corruption", "Financial Crime"]
+    }
+  ]
+}
