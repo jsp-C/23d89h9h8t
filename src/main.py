@@ -1,12 +1,16 @@
 import os
 import re
 import logging
+import json
 from pathlib import Path
+from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel
 from openai import OpenAI
-import json
+import dotenv
 
+dotenv.load_dotenv()
+    
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("EnterpriseExtractor")
 
@@ -72,7 +76,7 @@ class EnterpriseExtractor:
     def __init__(self,
                  extractor_model="gpt-4o-mini",
                  validator_model="gpt-4o-mini"):
-        self.client = OpenAI(base_url="https://models.github.ai/inference", api_key=os.getenv("OPENAI_API_KEY"))
+        self.client = OpenAI(base_url="https://models.github.ai/inference")
         self.extractor_model = extractor_model
         self.validator_model = validator_model
 
@@ -249,5 +253,16 @@ if __name__ == "__main__":
     extractor = EnterpriseExtractor()
     result = extractor.run(full_content)
 
-    import json
-    print(json.dumps(result, indent=2))
+    # Create output folder if it doesn't exist
+    output_dir = Path(__file__).parent.parent / "output"
+    output_dir.mkdir(exist_ok=True)
+    
+    # Generate timestamp filename
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    output_file = output_dir / f"{timestamp}.json"
+    
+    # Export result to file
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(result, f, indent=2)
+    
+    logger.info(f"Result exported to {output_file}")
