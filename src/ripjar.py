@@ -1,0 +1,927 @@
+import asyncio
+import functools
+import json
+import logging
+import os
+import re
+import sys
+from pathlib import Path
+import regex
+import tiktoken
+from tenacity import retry, stop_after_attempt
+from bs4 import BeautifulSoup, Tag
+from dotenv import load_dotenv
+from pydantic import BaseModel, ValidationError
+from pydantic.fields import FieldInfo
+from openai import OpenAI
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Any, List, Optional, Literal, TypeVar
+
+
+# ==========================================================================
+# Configuration
+# ==========================================================================
+load_dotenv()
+FILE_NAME = "raw4"  # Change this to test different files in assets/
+
+AI_URL = "https://models.github.ai/inference"
+API_KEY = os.getenv("OPENAI_API_KEY")
+BOT_NAME = os.getenv("BOT_NAME", "GPT-4o-mini")
+
+if not API_KEY:
+    raise EnvironmentError("API_KEY environment variable is required")
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+openai_client = OpenAI(
+    base_url=AI_URL,
+)
+
+# ==========================================
+# Data Models
+# ==========================================
+T = TypeVar("T", bound=BaseModel)
+
+class StrictBaseModel(BaseModel):
+    model_config = ConfigDict(extra='forbid', populate_by_name=True) # Add populate_by_name=True to the model config so both the field name and alias are accepted
+
+class Location(StrictBaseModel):
+    """
+    Represents a physical or geographical location associated with a specific time period.
+    """
+    location: str = Field( ..., description="The address, city, country, or region name.")
+    start_date: Optional[str] = Field(default=None, description="The date when the entity began association with this location (ISO 8601 format: YYYY-MM-DD).")
+    end_date: Optional[str] = Field(default=None, description="The date when the entity ended association with this location (ISO 8601 format: YYYY-MM-DD).")
+
+class Occupation(StrictBaseModel):
+    """
+    Details regarding a professional role or job position held by an entity.
+    """
+    title: str = Field(..., description="The job title or role name (e.g., 'CEO', 'Director', 'Software Engineer').")
+    institution: str = Field(...,  description="The name of the company, organization, or institution where this role was held.")
+    start_date: Optional[str] = Field(default=None, description="The start date of the employment (ISO 8601 format).")
+    end_date: Optional[str] = Field(default=None, description="The end date of the employment (ISO 8601 format).")
+
+class IDNumber(StrictBaseModel):
+    """
+    Government or organizational identification numbers.
+    """
+    type: str = Field(..., description="The type of ID (e.g., 'National ID', 'Passport', 'SSN', 'Tax ID', 'Driver License').")
+    number: str = Field(..., description="The alphanumeric string representing the identification number.")
+
+class Relation(StrictBaseModel):
+    """
+    Represents a relationship between the profile entity and another entity or person.
+    """
+    name: str = Field(..., description="The name of ALL the related person or organization.")
+    relation: str = Field(...,description="The nature of the relationship (e.g., 'Spouse', 'Subsidiary', 'Parent Company', 'Associate').")
+    risk_analysis: Optional[str] = Field(default=None, description="Any relevant risk information about this relationship.")
+    risk_level: Optional[Literal["LOW", "MEDIUM", "HIGH"]] = Field(default=None, description="The assessed risk level associated with this relationship.")
+
+class EntityProfile(StrictBaseModel):
+    """
+    A comprehensive profile of a legal entity or natural person, containing biographical and professional details.
+    """
+    type: List[str] = Field(
+        default=[], 
+        description="The classification of the entity (e.g., 'Person', 'Organization').",
+        examples=[["Person"], ["Organization"]],
+    )
+    primary_name: List[str] = Field(
+        default=[], 
+        description="The official or legal name(s) of the Person/Organization.",
+        examples=[["John Michael Smith"], ["Acme Corporation Ltd"]],
+    )
+    aliases: List[str] = Field(
+        default=[], 
+        description="Alternative names, nicknames, trading names, or 'Doing Business As' (DBA) names.",
+        examples=[["Johnny", "J.M. Smith"], ["Acme Corp", "Acme Inc"]],
+    )
+    gender: List[str] = Field(
+        default=[], 
+        description="If entity type is a person, the gender of the person.",
+        examples=[["Male"], ["Female"], ["Unknown"]],
+    )
+    date_of_birth: List[str] = Field(
+        default=[], 
+        description="If entity type is a person, the date of birth of the person in ISO 8601 format (YYYY-MM-DD).",
+        examples=[["1985-03-15"], ["1990-12-01"]],
+    )
+    citizenship: List[str] = Field(
+        default=[], 
+        description="If entity type is a person, countries where the person holds citizenship or nationality.",
+        examples=[["United States", "Canada"], ["United Kingdom"]]
+    )
+    place_of_birth: List[str] = Field(
+        default=[], 
+        description="If entity type is a person, city and country where the person was born.",
+        examples=[["New York, United States"], ["London, United Kingdom"]]
+    )
+    deceased: List[bool] = Field(
+        default=[], 
+        description="If entity type is a person, indication if the person is deceased, or date of death.",
+        examples=[[True], [False]]
+    )
+    id_numbers: List[IDNumber] = Field(
+        default=[], 
+        description="If entity type is a person, a list of identification documents that are owned by the subject.",
+        examples=[[{"type": "Passport", "number": "ABC123"}]]
+    )
+    domicile: List[Location] = Field(
+        default=[], 
+        description="If entity type is a person, the legal home or permanent residence of the person.",
+        examples=[[{"location": "London, UK", "start_date": "2020-01-01", "end_date": "2024-12-31"}]]
+    )
+    addresses: List[Location] = Field(
+        default=[], 
+        description="If entity type is a person, known physical addresses associated with the person.",
+        examples=[[{"location": "123 Main St, New York, NY", "start_date": "2018-06-01", "end_date": "2022-08-15"}]]
+    )
+    roles_primary_occupation: List[Occupation] = Field(
+        default=[], 
+        description="If entity type is a person, the current or most significant professional roles/employment held by the person.",
+        examples=[[{"title": "CEO", "institution": "Tech Corp", "start_date": "2020-01-01", "end_date": "2024-12-31"}]]
+    )
+    roles_history_occupation: List[Occupation] = Field(
+        default=[], 
+        description="If entity type is a person, past employment history of the person.",
+        examples=[[{"title": "Manager", "institution": "Old Company", "start_date": "2015-03-01", "end_date": "2019-12-31"}]]
+    )
+    associated_entities: List[Relation] = Field(
+        default=[],
+        description="Companies or organizations linked to the person.",
+        examples=[[{"name": "Subsidiary Inc", "relation": "Parent Company"}]]
+    )
+    associated_persons: List[Relation] = Field(
+        default=[], 
+        description="Natural persons (family, business partners) linked to the person. The relation field describes the nature of the relationship.",
+        examples=[[{"name": "Jane Doe", "relation": "Spouse"}, {"name": "Bob Smith", "relation": "Business Partner"}]]
+    )
+    date_of_incorporation: List[str] = Field(
+        default=[], 
+        description="If entity type is a company/organization, the date it was legally formed.",
+        examples=[["2010-06-15"], ["1995-01-20"]]
+    )
+    country_of_incorporation: List[str] = Field(
+        default=[], 
+        description="If entity type is a company/organization, the jurisdiction under whose laws it was formed.",
+        examples=[["Delaware, United States"], ["Cayman Islands"]]
+    )
+    country_of_affiliation: List[str] = Field(
+        default=[], 
+        description="If entity type is a company/organization, countries where the entity operates or has significant ties.",
+        examples=[["United States", "United Kingdom", "Singapore"]]
+    )
+    local_name: List[str] = Field(
+        default=[],
+        description="The name of the entity in its local language/script.",
+    )
+    marital_status: List[str] = Field(
+        default=[],
+        description="Marital status of the person.",
+        examples=[["Single"], ["Married"]]
+    )
+    free_text: List[str] = Field(default=[], description="Unstructured text related to the entity.")
+
+class MediaEntityProfile(StrictBaseModel):
+    headline: str = Field(..., description="The headline of the news article mentioning the entity.")
+    content: str = Field(..., description="The full text content of the news article mentioning the entity.")
+    date: str = Field(..., description="The publication date of the news article in ISO 8601 format (YYYY-MM-DD).")
+    source: str = Field(..., description="The source or publisher of the news article.")
+    url: Optional[str] = Field(default=None, description="The URL link to the news article. Omit or set null if not present.")
+    themes: List[str] = Field(default_factory=list, description="Key themes or topics associated with the news article (e.g., 'Bribery and Corruption', 'Financial Crime', 'Predicate Crime').")
+
+class WatchlistBasicInfo(StrictBaseModel):
+    id: str = Field(..., description="Unique identifier for the watchlist entry. (Risk Profile ID (RPID))")
+    name: str = Field(..., description="Primary name of the watchlist main subject")
+    nameMatchScore: int = Field(default=None, description="A score representing the similarity between the news entity's name and the watchlist entity's name (0-100).")
+    flags: List[str] = Field(description="Any relevant flags or designations associated with the watchlist entity")
+    watchlist: List[str] = Field(description="The specific watchlist(s) on which this entity appears (e.g., '[SIP] CCDI Wanted List', '[SIP] Interpol Red Notices').")
+
+class WatchlistEntityProfile(WatchlistBasicInfo):
+    """
+    A profile of an entity as extracted from a watchlist entry, containing key identifying information and associated media.
+    """
+    watchlist_data: List[EntityProfile] = Field(default_factory=list, description="Additional structured data from the watchlist entry that may be relevant for matching.")
+    media_data: List[MediaEntityProfile] = Field(default_factory=list, description="Associated media articles that mention this watchlist entity.")
+    
+
+# ==========================================================================
+# Helper
+# ==========================================================================
+def is_latin(text):
+    """Return True if >50% of characters in the text are Latin letters."""
+    if not text:
+        return False
+    letters = regex.findall(r'\p{L}', text)
+    if not letters:
+        return True
+    return len(regex.findall(r'\p{Latin}', text)) / len(letters) > 0.5
+
+def _count_tokens(text: str, model: str = "gpt-4o") -> int:
+    """Estimate token count for a string using tiktoken."""
+    try:
+        enc = tiktoken.encoding_for_model(model)
+    except KeyError:
+        enc = tiktoken.get_encoding("cl100k_base")
+    return len(enc.encode(text))
+
+def log_token_usage(fn):
+    """Decorator that logs estimated prompt and response token counts."""
+    @functools.wraps(fn)
+    async def wrapper(prompt: str) -> str:
+        prompt_tokens = _count_tokens(prompt)
+        logger.debug(f"[tokens] prompt: {prompt_tokens:,}")
+        response = await fn(prompt)
+        response_tokens = _count_tokens(response)
+        logger.debug(f"[tokens] response: {response_tokens:,}  |  total: {prompt_tokens + response_tokens:,}")
+        return response
+    return wrapper
+
+# ==========================================================================
+# Flag Normalization Map
+# ==========================================================================
+
+# Maps badge label text (as it appears in the document) → camelCase flag code.
+FLAG_LABEL_MAP: dict[str, str] = {
+    "edd scap": "eddScap",
+    "edd":      "eddScap",
+    "sip":      "sip",
+    "media":    "media",
+    "pep":      "pep",
+    "ubr":      "ubr",
+    "ool":      "ool",
+}
+
+# ==========================================================================
+# Utility Functions
+# ==========================================================================
+
+def serialize(val: Any) -> Any:
+    """Recursively serialize Pydantic models to dictionaries (using aliases)."""
+    if isinstance(val, dict):
+        return {k: serialize(v) for k, v in val.items()}
+    if isinstance(val, list):
+        return [serialize(v) for v in val]
+    if isinstance(val, BaseModel):
+        return val.model_dump(by_alias=True)
+    return val
+
+def get_simple_type_str(annotation) -> str:
+    """Get simple type string for schema."""
+    from typing import get_origin, get_args
+    origin = get_origin(annotation)
+    if origin is list:
+        inner = get_args(annotation)[0]
+        if hasattr(inner, '__name__'):
+            return f"array of {inner.__name__}s"
+        else:
+            return f"array of {get_simple_type_str(inner)}s"
+    elif hasattr(annotation, '__name__'):
+        if annotation.__name__ == 'str':
+            return 'string'
+        elif annotation.__name__ == 'int':
+            return 'int'
+        else:
+            return annotation.__name__
+    else:
+        return str(annotation)
+    
+def get_example_value(field: FieldInfo) -> str:
+    """Get example value for a type annotation."""
+    examples = field.examples if field.examples else []
+    return f"{examples[0]}" if examples else ""
+    # example_str = f", e.g. {examples[0]}" if examples else ""
+    # return example_str
+
+def get_description(field: FieldInfo) -> str:
+    """Get description from field info."""
+    return field.description or ""
+
+def generate_schema(model: type[BaseModel], prefix="", indent=0, is_nested=False) -> str:
+    """Generate schema string from Pydantic model."""
+    lines = []
+    if is_nested:
+        lines.append(f"{'  ' * indent}- Fields for each {model.__name__}:")
+        indent += 1
+    for name, field in model.model_fields.items():
+        full_name = f"{prefix}.{name}" if prefix else name
+        type_str = get_simple_type_str(field.annotation)
+        description = get_description(field)
+        example_str = get_example_value(field)
+
+        if hasattr(field.annotation, '__origin__') and field.annotation.__origin__ is list:
+            inner = field.annotation.__args__[0]
+            try:
+                if issubclass(inner, BaseModel):
+                    type_str = f"array of {inner.__name__} objects ({description})"
+                    description = ""
+            except TypeError:
+                pass
+
+        line = f"{'  ' * indent}- {full_name}: {type_str} ({description}{example_str})"
+        lines.append(line)
+
+        # Recurse for nested models
+        if hasattr(field.annotation, '__origin__') and field.annotation.__origin__ is list:
+            inner = field.annotation.__args__[0]
+            try:
+                if issubclass(inner, BaseModel):
+                    lines.append(generate_schema(inner, full_name, indent + 1, True))
+            except TypeError:
+                pass
+        else:
+            try:
+                if issubclass(field.annotation, BaseModel):
+                    lines.append(generate_schema(field.annotation, full_name, indent + 1, False))
+            except TypeError:
+                pass
+
+    return "\n".join(lines)
+
+def extract_json_from_text(text: str) -> str:
+    """Extract the first JSON object from LLM response text."""
+    patterns = [
+        r"```(?:json)?\s*(\{.*?\})\s*```",
+        r"(\{.*\})",
+    ]
+    for pattern in patterns:
+        if match := re.search(pattern, text, re.DOTALL):
+            return match.group(1).strip()
+    return text.strip()
+
+def extract_json_array_from_text(text: str) -> str:
+    """Extract the first JSON array from LLM response text."""
+    patterns = [
+        r"```(?:json)?\s*(\[.*?\])\s*```",
+        r"(\[.*\])",
+    ]
+    for pattern in patterns:
+        if match := re.search(pattern, text, re.DOTALL):
+            return match.group(1).strip()
+    return text.strip()
+
+# ==========================================================================
+# HTML / Text Processing
+# ==========================================================================
+
+def _table_to_pipe_text(table: Tag) -> str:
+    """Convert a BeautifulSoup <table> element to pipe-delimited plain text."""
+    rows = []
+    for tr in table.find_all("tr"):
+        cells = [cell.get_text(separator=" ", strip=True) for cell in tr.find_all(["th", "td"])]
+        rows.append(" | ".join(cells))
+    return "\n".join(rows)
+
+
+def sanitize_html(html: str) -> str:
+    """
+    Convert HTML to clean plain text while preserving table structure
+    as pipe-delimited rows. Strips page-break / footer / header markers.
+    """
+    # Strip page-level HTML comments before parsing
+    html = re.sub(
+        r'<!--\s*Page(?:Break|Footer|Header)[^>]*-->',
+        '',
+        html,
+        flags=re.IGNORECASE,
+    )
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Replace each <table> with its pipe-delimited representation
+    for table in soup.find_all("table"):
+        pipe_text = _table_to_pipe_text(table)
+        table.replace_with(f"\n{pipe_text}\n")
+
+    text = soup.get_text(separator="\n", strip=True)
+
+    # Collapse excess whitespace
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(r' {2,}', ' ', text)
+
+    return text.strip()
+
+
+def _join_pages(pages: list[dict]) -> str:
+    """Concatenate raw page_text values from a page list."""
+    return "\n".join(p.get("page_text", "") for p in pages)
+
+
+# ==========================================================================
+# Document Segmentation
+# ==========================================================================
+
+def segment_raw_pages(pages: list[dict]) -> tuple[list[dict], list[dict]]:
+    """
+    Split page list into (profile_pages, news_pages).
+
+    Splits at the first page containing the 'Full news articles' PageHeader
+    marker. Pages beyond the first 'Assessment activity' (ID: ...) header
+    are discarded.
+    """
+    profile_pages: list[dict] = []
+    news_pages: list[dict] = []
+
+    in_news = False
+    for page in pages:
+        text = page.get("page_text", "")
+
+        # Stop at assessment-activity section (irrelevant content)
+        if re.search(r'<!--\s*PageHeader="ID:', text, re.IGNORECASE):
+            break
+
+        # Switch to news section
+        if re.search(r'<!--\s*PageHeader="Full news articles"', text, re.IGNORECASE):
+            in_news = True
+
+        if in_news:
+            news_pages.append(page)
+        else:
+            profile_pages.append(page)
+
+    return profile_pages, news_pages
+
+
+# ==========================================================================
+# Regex Pre-Extraction (Deterministic Fields)
+# ==========================================================================
+
+# Fields that only apply to Person entities — clear for Organizations
+_PERSON_ONLY_FIELDS: tuple[str, ...] = (
+    "gender", "citizenship", "place_of_birth", "deceased",
+    "domicile", "roles_primary_occupation", "roles_history_occupation",
+    "marital_status",
+)
+
+# Fields that only apply to Organization entities — clear for Persons
+_ORG_ONLY_FIELDS: tuple[str, ...] = (
+    "date_of_incorporation", "country_of_incorporation", "country_of_affiliation",
+)
+
+
+def _clear_type_exclusive_fields(profile: EntityProfile) -> EntityProfile:
+    """
+    Zero out fields that don't apply to the detected entity type.
+    Uses model_copy so the original is not mutated.
+    """
+    entity_types = [t.lower() for t in profile.type]
+    is_person = any("person" in t for t in entity_types)
+    is_org = any(t in ("organization", "organisation", "company") for t in entity_types)
+
+    overrides: dict[str, list] = {}
+    if is_person and not is_org:
+        for field in _ORG_ONLY_FIELDS:
+            overrides[field] = []
+    elif is_org and not is_person:
+        for field in _PERSON_ONLY_FIELDS:
+            overrides[field] = []
+
+    return profile.model_copy(update=overrides) if overrides else profile
+
+
+
+async def extract_watchlist_names(profile_text: str) -> list[str]:
+    """
+    Extract watchlist names from the Watchlists table.
+    """
+    watchlists: list[str] = []
+    wl_section_match = re.search(
+        r'\s*#{1,3}\s*Watchlists\s*(.*?)(?=\s*#{1,4}\s|\Z)',
+        profile_text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    logger.debug(f"Extracted Watchlists section:\n{wl_section_match}...")  # Log first 500 chars of section
+    if wl_section_match:
+        section = wl_section_match.group(1)
+        logger.debug(f"Watchlists section content (first 500 chars):\n{section[:500]}")
+        watchlists = await extract_watchlists_with_llm(section)
+    return watchlists
+
+async def regex_extract_profile_fields(profile_text: str) -> dict[str, Any]:
+    """
+    Extract deterministic fields from profile text using regex, avoiding LLM
+    guesswork for structured markers.
+
+    Returns a partial dict with: id, name, nameMatchScore, flags.
+    """
+    result: dict[str, Any] = {}
+
+    # RPID  →  id
+    if m := re.search(r'RPID:\s*([a-z0-9][a-z0-9-]+)', profile_text, re.IGNORECASE):
+        result["id"] = m.group(1).strip()
+
+    # Primary profile name and capitalize first letter of each word (line after "Name:" label — not inside tables)
+    if m := re.search(r'<p>\s*Name:\s*(.*?)\s*</p>', profile_text, re.IGNORECASE):
+        result["name"] = m.group(1).strip().title()
+
+    # Match score  →  nameMatchScore
+    if m := re.search(r'Match Score:\s*(\d+)\s*%', profile_text, re.IGNORECASE):
+        result["nameMatchScore"] = int(m.group(1))
+
+    # Flags — iteratively look for known badge labels appearing as standalone <p> tags
+    found_flags: list[str] = []
+    badge_pattern = re.compile(
+        r'\s*(' + '|'.join(re.escape(k) for k in FLAG_LABEL_MAP) + r')\s*',
+        re.IGNORECASE,
+    )
+    for m in badge_pattern.finditer(profile_text):
+        label = m.group(1).strip().lower()
+        code = FLAG_LABEL_MAP.get(label)
+        if code and code not in found_flags:
+            found_flags.append(code)
+    if found_flags:
+        result["flags"] = found_flags
+
+    return result
+
+
+# ==========================================================================
+# LLM Communication
+# ==========================================================================
+@log_token_usage
+async def fetch_llm_response(prompt: str) -> str:
+    """Send request to LLM and return raw response."""
+    return await fetch_openai_llm_response(prompt)
+
+async def fetch_openai_llm_response(prompt: str) -> str:
+    """Send request to OpenAI-compatible LLM and return raw response."""
+    def _call_openai():
+        response = openai_client.chat.completions.create(
+            model=BOT_NAME,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        logger.debug(f"Full LLM response object:\n{response}")
+        return response.choices[0].message.content
+    
+    return await asyncio.to_thread(_call_openai)
+
+async def query_llm_object(prompt: str, model_class: type[T], max_retries: int = 2) -> T:
+    """
+    Send prompt to LLM and parse as a Pydantic model (JSON object).
+    On ValidationError, feeds the error back to the LLM for one correction attempt.
+    """
+    raw_response = await fetch_llm_response(prompt)
+    logger.debug(f"Raw LLM response:\n{raw_response}")
+    json_str = extract_json_from_text(raw_response)
+
+    for attempt in range(max_retries + 1):
+        try:
+            return model_class.model_validate_json(json_str)
+        except ValidationError as exc:
+            if attempt == max_retries:
+                logger.error(f"Validation failed after {attempt + 1} attempt(s): {exc}")
+                raise
+            logger.warning(f"Validation error (attempt {attempt + 1}), retrying with correction prompt.")
+            correction_prompt = (
+                f"Your previous JSON output failed schema validation with these errors:\n"
+                f"{exc}\n\n"
+                f"Correct ONLY the invalid fields and return the fixed JSON. "
+                f"Do not change fields that were already valid.\n\n"
+                f"Previous JSON:\n{json_str}"
+            )
+            raw_response = await fetch_llm_response(correction_prompt)
+            logger.debug(f"Correction LLM response:\n{raw_response}")
+            json_str = extract_json_from_text(raw_response)
+
+    raise RuntimeError("Unreachable")  # pragma: no cover
+
+async def query_llm_array(prompt: str, item_class: type[T] | None = None, max_retries: int = 2) -> list[T] | list[Any]:
+    """
+    Send prompt to LLM and parse as a list of Pydantic model instances (JSON array).
+    If item_class is None, returns raw list items without validation.
+    On ValidationError, feeds the error back to the LLM for one correction attempt.
+    """
+    raw_response = await fetch_llm_response(prompt)
+    logger.debug(f"Raw LLM response:\n{raw_response}")
+    json_str = extract_json_array_from_text(raw_response)
+
+    for attempt in range(max_retries + 1):
+        try:
+            items_raw = json.loads(json_str)
+            if not isinstance(items_raw, list):
+                raise TypeError(f"Expected array, got {type(items_raw).__name__}")
+            
+            if item_class is None:
+                return items_raw
+            else:
+                return [item_class.model_validate(item) for item in items_raw]
+        except (ValidationError, json.JSONDecodeError, TypeError) as exc:
+            if attempt == max_retries:
+                logger.error(f"Array validation failed after {attempt + 1} attempt(s): {exc}")
+                raise
+            logger.warning(f"Array validation error (attempt {attempt + 1}), retrying.")
+            correction_prompt = (
+                f"Your previous JSON array output had these errors:\n"
+                f"{exc}\n\n"
+                f"Return the corrected JSON array only.\n\n"
+                f"Previous JSON:\n{json_str}"
+            )
+            raw_response = await fetch_llm_response(correction_prompt)
+            logger.debug(f"Correction LLM response:\n{raw_response}")
+            json_str = extract_json_array_from_text(raw_response)
+
+    raise RuntimeError("Unreachable")  # pragma: no cover
+
+
+# ==========================================================================
+# Extraction Prompts
+# ==========================================================================
+
+
+async def extract_profile_fields_with_llm(profile_text: str) -> WatchlistBasicInfo:
+    """
+    Extract profile fields
+    """
+    schema = generate_schema(WatchlistBasicInfo)
+    prompt = f"""You are extracting structured compliance data from a watchlist risk profile section.
+
+PROFILE SECTION:
+{profile_text}
+
+TASK: Extract ONE WatchlistBasicInfo object as a JSON object.
+
+SCHEMA:
+{schema}
+
+EXTRACTION RULES:
+1. WATCHLIST: Extract from the Watchlists table "Name" column. Format: "[TYPE] List Name".
+2. TYPE-SPECIFIC FIELDS — set irrelevant fields to [] based on entity type:
+   - If type is "Person": set date_of_incorporation, country_of_incorporation, country_of_affiliation to [].
+   - If type is "Organization": set gender, citizenship, place_of_birth, deceased, domicile,
+     roles_primary_occupation, roles_history_occupation, marital_status to [].
+3. If a field has no data, use [] — never null, never omit the field.
+4. Do NOT extract data from "Assessment activity" (rows with "New evidence by...").
+5. Do NOT fabricate any data not explicitly in the text.
+
+OUTPUT: A single JSON object only, no surrounding text.
+"""
+    fields = await query_llm_object(prompt, WatchlistBasicInfo)
+    return fields
+
+@retry(stop=stop_after_attempt(3), retry_error_callback=lambda s: (logger.error(f"Extract watchlist data failed after {s.attempt_number()} attempts: {s.outcome().exception()}", None)[1]))
+async def extract_watchlist_data_with_llm(profile_text: str) -> list[EntityProfile]:
+    """Extract EntityProfile fields from the risk-profile section."""
+
+    schema = generate_schema(EntityProfile)
+    prompt = f"""You are extracting structured compliance data from a watchlist risk profile section.
+
+PROFILE SECTION:
+{profile_text}
+
+TASK: Extract ONE EntityProfile object as a JSON object.
+
+SCHEMA:
+{schema}
+
+EXTRACTION RULES:
+1. DATES: Normalize to ISO 8601 (YYYY-MM-DD). If only a year is given (e.g. "1984"), keep it as "1984".
+2. ALIASES: Include all rows from the Aliases table AND all "Original script" name rows.
+3. RELATIONSHIPS TABLE: The name may be split across rows (first name in one row, last name in the next).
+   Reconstruct the full name by joining adjacent cells that form a single person's name.
+   The "Relationship" column may also span rows — join them into one phrase (e.g. "Associated Special Interest Person").
+   Put individual people in associated_persons, organizations in associated_entities.
+4. ID NUMBERS: Extract type and number from the ID numbers table. Normalize the type label to title-case (e.g. "ubs_hrn_id" → "ubs_hrn_id").
+5. WATCHLIST: Extract from the Watchlists table "Name" column. Format: "[TYPE] List Name".
+6. RELATIONSHIPS — risk_level vs risk_analysis:
+   - risk_analysis: Copy the raw "Associated Risk" cell text (e.g. "SIP, OOL", "UBR"). 
+   - risk_level: Only set to "LOW", "MEDIUM", or "HIGH" if the document explicitly states one of those words.
+     Risk-type codes such as "UBR", "SIP", "OOL", "EDD" are NOT risk levels — leave risk_level as null for those.
+7. TYPE-SPECIFIC FIELDS — set irrelevant fields to [] based on entity type:
+   - If type is "Person": set date_of_incorporation, country_of_incorporation, country_of_affiliation to [].
+   - If type is "Organization": set gender, citizenship, place_of_birth, deceased, domicile,
+     roles_primary_occupation, roles_history_occupation, marital_status to [].
+8. If a field has no data, use [] — never null, never omit the field.
+9. Do NOT extract data from "Assessment activity" (rows with "New evidence by...").
+10. Do NOT fabricate any data not explicitly in the text.
+
+OUTPUT: A single JSON object only, no surrounding text.
+"""
+    profile = await query_llm_object(prompt, EntityProfile)
+    profile = _clear_type_exclusive_fields(profile)
+    return [profile]
+
+@retry(stop=stop_after_attempt(3), retry_error_callback=lambda s: (logger.error(f"Extract media data failed after {s.attempt_number()} attempts: {s.outcome().exception()}", None)[1]))
+async def extract_media_data_with_llm(news_text: str) -> list[MediaEntityProfile]:
+    """Extract MediaEntityProfile items from the full news articles section."""
+    schema = generate_schema(MediaEntityProfile)
+    prompt = f"""You are extracting structured news article data from a compliance report's news section.
+
+NEWS SECTION:
+{news_text}
+
+TASK: Extract EVERY news article found as a JSON array of article objects.
+
+SCHEMA (one object per article):
+{schema}
+
+EXTRACTION RULES:
+1. headline: The article's heading (the heading line at the start of each article).
+2. content: The article body text. It could be splitted into multiple paragraphs under the same headline, but should include everything related to the article, including any standalone theme labels appearing in the body. 
+   Do NOT include standalone theme labels (e.g. lines like "Financial Crime" or "Bribery and Corruption, Financial Crime").
+3. date: Publication date in ISO 8601 (YYYY-MM-DD). Parse from "published DD Mon YYYY" or "DD Sep YYYY" patterns.
+4. source: Publisher name from the "Source: <name>" line. Strip the date part.
+5. url: Extract the URL for each article from its own content (e.g. a line starting with "http" or a labelled "URL:" field within the article).
+   If no URL is found for an article, omit the field or set it to null.
+6. themes: Collect ALL standalone theme label lines within the article body 
+   (e.g. a line "Bribery and Corruption, Financial Crime" → ["Bribery and Corruption", "Financial Crime"]).
+   Split comma-separated themes into individual strings.
+7. Each article starts at a new heading. Do not merge articles.
+
+OUTPUT: A JSON array [...] only, no surrounding text.
+"""
+    return await query_llm_array(prompt, MediaEntityProfile)
+
+@retry(stop=stop_after_attempt(3), retry_error_callback=lambda s: (logger.error(f"Extract watchlists failed after {s.attempt_number()} attempts: {s.outcome().exception()}", None)[1]))
+async def extract_watchlists_with_llm(watchlist_free_text: str) -> list[str]:
+    """Extract watchlist names from the Watchlists section using LLM, as a fallback if regex fails."""
+    prompt = f"""You are extracting watchlist names from a compliance report's Watchlists section.
+WATCHLISTS SECTION:
+{watchlist_free_text}
+TASK: Extract the watchlist names as a JSON array of strings.
+EXTRACTION RULES:
+1. Extract from the "Name" column of the Watchlists table.
+2. The table is in pipe-delimited format (e.g. "Name | From | To").
+
+EXAMPLE OUTPUT: 
+["[SIP] CCDI Wanted List","[SIP] CCDI (China) 100 Fugitives List","[SIP] Interpol Red Notices"]
+
+OUTPUT: A JSON array [...] only, no surrounding text.
+"""
+    response = await query_llm_array(prompt)
+    return response
+
+# ==========================================================================
+# Main Extraction Orchestrator
+# ==========================================================================
+
+async def extract_data(profile_text: str, news_text: str) -> WatchlistEntityProfile:
+    """
+    3-phase pipeline:
+      1. Regex-extract deterministic fields (RPID, score, flags).
+      2. LLM-extract watchlist names from Watchlists table.
+      3. LLM-extract structured fields separately for profile.
+      4. LLM-extract structured fields separately for news.
+    """
+    # ── Phase 1: Regex pre-extraction ────────────────────────────────────
+    regex_fields = await regex_extract_profile_fields(profile_text)
+    fields = await extract_profile_fields_with_llm(profile_text)
+    # logger.debug(f"Regex-extracted fields:\n{json.dumps(regex_fields, indent=2)}"); return
+    # logger.debug(f"profile_text:\n{profile_text}"); return
+
+    # ── Phase 2: If regex fails to find any watchlist names, try LLM extraction as a fallback
+    # watchlist = await extract_watchlist_names(profile_text)
+    # logger.debug(f"Watchlist names extracted via regex:\n{json.dumps(watchlist, indent=2)}"); return
+    
+    # ── Phase 3: LLM extraction for profile ──────────────────────────────────────────
+    watchlist_data = await extract_watchlist_data_with_llm(profile_text)
+    
+    # Post-process aliases to split Latin vs local script names into aliases vs local_name fields, based on character script detection
+    watchlist_data = [
+        profile.model_copy(update={
+            "aliases": [n for n in (profile.aliases or [])[1:] if is_latin(n)],
+            "local_name": [n for n in (profile.aliases or [])[1:] if not is_latin(n)],
+        })
+        for profile in watchlist_data
+    ]
+    
+    # ── Phase 4: LLM extraction for news ─────────────────────────────────────────────
+    media_data: list[MediaEntityProfile] = []
+    if news_text.strip():
+        media_data = await extract_media_data_with_llm(news_text)
+
+    # ── Compose final result ─────────────────────────────────────────────
+    # Pull top-level fields from regex (authoritative) or watchlist_data as fallbacks
+    entity = watchlist_data[0] if watchlist_data else EntityProfile()
+
+    result = WatchlistEntityProfile(
+        id             = regex_fields.get("id", fields.id if fields else ""),
+        name           = regex_fields.get("name", fields.name if fields else ""),
+        nameMatchScore = regex_fields.get("nameMatchScore", fields.nameMatchScore if fields else None),
+        flags          = regex_fields.get("flags", fields.flags if fields else []),
+        watchlist      = fields.watchlist if fields and fields.watchlist else [],
+        watchlist_data = watchlist_data,
+        media_data     = media_data,
+    )
+
+    return result
+
+
+# ==========================================================================
+# Data Transformation
+# ==========================================================================
+
+def save_with_timestamp(result: dict[str, Any], base_path: str) -> str:
+    """Save result to JSON file with timestamp in output/ folder to avoid overwrite."""
+    from datetime import datetime
+
+    output_dir = Path(base_path).parent / "output"
+    output_dir.mkdir(exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{Path(base_path).stem}_{timestamp}.json"
+    output_path = output_dir / filename
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, indent=2, ensure_ascii=False)
+
+    logger.info(f"Result saved to: {output_path}")
+    return str(output_path)
+
+
+# ==========================================================================
+# File I/O
+# ==========================================================================
+
+def load_pages(file_path: str) -> list[dict]:
+    """Load pages from a JSON file or wrap an HTML file as a single page."""
+    if file_path.endswith('.html'):
+        with open(file_path, "r", encoding="utf-8") as f:
+            return [{"page_number": 1, "page_text": f.read()}]
+    else:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+def load_profile_text(full_text: str) -> str:
+    """Extract the profile section text (up to 'Full news articles' header) from full text. Fallback to full text if marker not found."""
+    match = re.search(
+        r'Full news articles',
+        full_text,
+        re.IGNORECASE,
+    )
+    return full_text[:match.start()] if match else full_text
+
+def load_news_text(full_text: str) -> str:
+    """Extract the news section text (after 'Full news articles' header) from full text. Fallback to empty string if marker not found."""
+    match = re.search(
+        r'Full news articles',
+        full_text,
+        re.IGNORECASE,
+    )
+    return full_text[match.end():] if match else ""
+
+async def convert_file(input_path: str) -> WatchlistEntityProfile:
+    """Convert a single input file (HTML or JSON) to target JSON format using LLM with fallbacks."""
+    try:
+        pages = load_pages(input_path)
+        full_html = _join_pages(pages)
+        profile_text, news_text = load_profile_text(full_html), load_news_text(full_html)
+        # profile_text, news_text = sanitize_html(profile_text), sanitize_html(news_text)
+        result = await extract_data(profile_text, news_text)
+        serialized_result = serialize(result)
+        return serialized_result
+
+    except Exception as e:
+        logger.error(f"Conversion failed for {input_path}: {e}", exc_info=True)
+        raise
+
+# ==========================================================================
+# Testing & Entry Point
+# ==========================================================================
+
+async def main() -> None:
+    """Test the watchlist extraction pipeline."""
+
+    # Uncomment to print schema only:
+    # logger.debug(generate_schema(WatchlistEntityProfile)); return
+
+    assets_dir = Path(__file__).parent.parent / "assets"
+    output_dir = Path(__file__).parent.parent / "output"
+    # input_file = assets_dir / f"{FILE_NAME}.json"
+    input_file = assets_dir / f"{FILE_NAME}.json"
+    output_file = output_dir / f"ripjar/{FILE_NAME}_new.json"
+
+    # Ensure output directory exists
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    if not input_file.exists():
+        logger.error(f"Input file not found: {input_file}")
+        return
+
+    logger.debug(f"Starting conversion: {input_file}")
+
+    try:
+        result = await convert_file(str(input_file))
+        saved_path = save_with_timestamp(result, output_file)
+        logger.debug(f"Successfully converted: {input_file} -> {saved_path}")
+
+        # Load and print the saved result for verification 
+        with open(saved_path, "r", encoding="utf-8") as f:
+            result = json.load(f)
+            logger.debug("\n=== Conversion Result ===")
+            logger.debug(json.dumps(result, indent=2, ensure_ascii=False))
+
+    except Exception as e:
+        logger.error(f"Conversion failed: {e}", exc_info=True)
+
+if __name__ == "__main__":
+    asyncio.run(main())

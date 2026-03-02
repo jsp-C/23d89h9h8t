@@ -1,0 +1,77 @@
+{
+  "id": "qip-qat-qaq-loc",
+  "name": "Vivek Ashok Pandey",
+  "nameMatchScore": 96,
+  "flags": [
+    "ubr",
+    "pep",
+    "media",
+    "sip"
+  ],
+  "watchlist": [
+    "[SIP] OFAC Specially Designated Global Terrorist List",
+    "[SIP] Terror"
+  ],
+  "watchlist_data": [
+    {
+      "type": [
+        "Person"
+      ],
+      "primary_name": [
+        "Vivek Ashok Pandey"
+      ],
+      "aliases": [],
+      "gender": [
+        "Male"
+      ],
+      "date_of_birth": [
+        "1985-08-17"
+      ],
+      "citizenship": [
+        "India"
+      ],
+      "place_of_birth": [
+        "Hasanpur Sultanpur, India"
+      ],
+      "deceased": [
+        false
+      ],
+      "id_numbers": [
+        {
+          "type": "Passport",
+          "number": "L6512200"
+        }
+      ],
+      "domicile": [
+        {
+          "location": "India",
+          "start_date": null,
+          "end_date": null
+        }
+      ],
+      "addresses": [],
+      "roles_primary_occupation": [],
+      "roles_history_occupation": [],
+      "associated_entities": [],
+      "associated_persons": [],
+      "date_of_incorporation": [],
+      "country_of_incorporation": [],
+      "country_of_affiliation": [],
+      "local_name": [],
+      "marital_status": [],
+      "free_text": []
+    }
+  ],
+  "media_data": [
+    {
+      "headline": "U.S. sanctions captains of two Houthi-linked tankers",
+      "content": "The captains of two Houthi-linked tankers, Vivek Ashok Pandey and Sandeep Singh Choudhary, both Indian nationals are among ten individuals, vessels and entities sanctioned by the U.S. Department of the Treasury's Office of Foreign Assets Control (OFAC) in its latest moves against the network of Houthi financial facilitator Said al-Jamal.\n\nAll are said to have engaged in the illicit transport of oil and other commodities. The action targets maritime shipping and financial facilitators, the two captains of Houthi-linked tankers several vessel managers and owners, and a company involved in forging shipping documents.\n\nThe Houthis continue to leverage an expansive support network to facilitate their illicit activities, including hiding the origin of cargo, forging shipping documents, and providing services to sanctioned vessels. The United States government is committed to disrupting and degrading the Houthis ability to engage in attacks against commercial shipping and naval vessels.\n\nOFAC designated Said al-Jamal on June 10, 2021, for having materially assisted, sponsored, or provided financial, material, or technological support for Iran's Islamic Revolutionary Guard Corps - Quds Force (IRGC-QF). The IRGC-QF was designated on October 25, 2087, for providing support to multiple terrorist groups.\n\nIndia-based Rayyan Shipping (OPC) Private Limited has served as the manager and technical operator of another Houthi-linked tanker, the Olympic.\n\nThe Olympics, captained by Vivek Ashok Pandey was operating under forged paperwork falsely indicating that the vessel was carrying Malaysian commodities that were loaded at a Malaysian port in late April. Pandey has captained the Lady Sofia since it onboarded commodities on behalf of the Said al-Jamal network in late January.\n\nThe Olympics remains in the East China Sea.\n\nOFAC is designating Said al-Jamal's Yemen-based nephew Abdallah Najib Ahmad al-Jamal, who manages money laundering operations for the Said al-Jamal network. Abdallah al-Jamal works with U.S.-designated money launderer Bilal Hudroj and sanctioned Yemeni exchange houses Davos Company for Exchange and Transfers and Al-Rawda Exchange and Money Transfers Company.\n\nShark International Shipping L.L.C, Rayyan Shipping (OPC) Private Limited, Vivek Ashok Pandey, and Abdallah Najib Ahmad al-Jamal are being designated for having materially assisted, sponsored, or provided financial, material, or technological support for Said al-Jamal.\n\nOFAC is also designating Sandeep Singh Choudhary, the master of the vessel La Pearl. Saone Shipping Corporation was concurrently designated for having materially assisted, sponsored, or provided financial, material, or technological support for Seper Energy Jahan Nama Pars Company (SEJ).\n\nSandeep Singh Choudhary is being designated for having materially assisted, sponsored, or provided financial, material, or technological support for SEJ.\n\nSANCTIONS IMPLICATIONS\n\nAs a result of OFAC's action, all property and interests in property of the designated persons that are in the United States or in the possession or control of U.S. persons are blocked and must be reported to OFAC.\n\nUnless authorized by a general or specific license issued by OFAC, or exempt, OFAC's regulations generally prohibit all transactions by U.S. persons or within the United States that involve any property or interests in property of designated or otherwise blocked persons.\n\nFinancial institutions and other persons that engage in certain transactions or activities with the sanctioned entities and individuals may expose themselves to sanctions or be subject to an enforcement action.",
+      "date": "2024-06-11",
+      "source": "www.marinelog.com",
+      "url": null,
+      "themes": [
+        "Terrorism and Terrorism Funding"
+      ]
+    }
+  ]
+}

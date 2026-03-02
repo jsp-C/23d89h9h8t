@@ -1,0 +1,531 @@
+{
+  "$defs": {
+    "IDNumber": {
+      "additionalProperties": false,
+      "description": "Government or organizational identification numbers.",
+      "properties": {
+        "type": {
+          "description": "The type of ID (e.g., 'National ID', 'Passport', 'SSN', 'Tax ID', 'Driver License').",
+          "title": "Type",
+          "type": "string"
+        },
+        "number": {
+          "description": "The alphanumeric string representing the identification number.",
+          "title": "Number",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "number"
+      ],
+      "title": "IDNumber",
+      "type": "object"
+    },
+    "Location": {
+      "additionalProperties": false,
+      "description": "Represents a physical or geographical location associated with a specific time period.",
+      "properties": {
+        "location": {
+          "description": "The address, city, country, or region name.",
+          "title": "Location",
+          "type": "string"
+        },
+        "start_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The date when the entity began association with this location (ISO 8601 format: YYYY-MM-DD).",       
+          "title": "Start Date"
+        },
+        "end_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The date when the entity ended association with this location (ISO 8601 format: YYYY-MM-DD).",       
+          "title": "End Date"
+        }
+      },
+      "required": [
+        "location"
+      ],
+      "title": "Location",
+      "type": "object"
+    },
+    "Occupation": {
+      "additionalProperties": false,
+      "description": "Details regarding a professional role or job position held by an entity.",
+      "properties": {
+        "title": {
+          "description": "The job title or role name (e.g., 'CEO', 'Director', 'Software Engineer').",
+          "title": "Title",
+          "type": "string"
+        },
+        "institution": {
+          "description": "The name of the company, organization, or institution where this role was held.",
+          "title": "Institution",
+          "type": "string"
+        },
+        "start_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The start date of the employment (ISO 8601 format).",
+          "title": "Start Date"
+        },
+        "end_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The end date of the employment (ISO 8601 format).",
+          "title": "End Date"
+        }
+      },
+      "required": [
+        "title",
+        "institution"
+      ],
+      "title": "Occupation",
+      "type": "object"
+    },
+    "Relation": {
+      "additionalProperties": false,
+      "description": "Represents a relationship between the profile entity and another entity or person.",
+      "properties": {
+        "name": {
+          "description": "The name of ALL the related person or organization.",
+          "title": "Name",
+          "type": "string"
+        },
+        "relation": {
+          "description": "The nature of the relationship (e.g., 'Spouse', 'Subsidiary', 'Parent Company', 'Associate').",      
+          "title": "Relation",
+          "type": "string"
+        },
+        "risk_analysis": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Any relevant risk information about this relationship.",
+          "title": "Risk Analysis"
+        },
+        "risk_level": {
+          "anyOf": [
+            {
+              "enum": [
+                "LOW",
+                "MEDIUM",
+                "HIGH"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The assessed risk level associated with this relationship.",
+          "title": "Risk Level"
+        }
+      },
+      "required": [
+        "name",
+        "relation"
+      ],
+      "title": "Relation",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A comprehensive profile of a legal entity or natural person, containing biographical and professional details.",
+  "properties": {
+    "type": {
+      "default": [],
+      "description": "The classification of the entity (e.g., 'Person', 'Organization').",
+      "examples": [
+        [
+          "Person"
+        ],
+        [
+          "Organization"
+        ]
+      ],
+      "items": {
+        "type": "string"
+      },
+      "title": "Type",
+      "type": "array"
+    },
+    "primary_name": {
+      "default": [],
+      "description": "The official or legal name(s) of the Person/Organization.",
+      "examples": [
+        [
+          "John Michael Smith"
+        ],
+        [
+          "Acme Corporation Ltd"
+        ]
+      ],
+      "items": {
+        "type": "string"
+      },
+      "title": "Primary Name",
+      "type": "array"
+    },
+    "aliases": {
+      "default": [],
+      "description": "Alternative names, nicknames, trading names, or 'Doing Business As' (DBA) names.",
+      "examples": [
+        [
+          "Johnny",
+          "J.M. Smith"
+        ],
+        [
+          "Acme Corp",
+          "Acme Inc"
+        ]
+      ],
+      "items": {
+        "type": "string"
+      },
+      "title": "Aliases",
+      "type": "array"
+    },
+    "gender": {
+      "default": [],
+      "description": "If entity type is a person, the gender of the person.",
+      "examples": [
+        [
+          "Male"
+        ],
+        [
+          "Female"
+        ],
+        [
+          "Unknown"
+        ]
+      ],
+      "items": {
+        "type": "string"
+      },
+      "title": "Gender",
+      "type": "array"
+    },
+    "date_of_birth": {
+      "default": [],
+      "description": "If entity type is a person, the date of birth of the person in ISO 8601 format (YYYY-MM-DD).",
+      "examples": [
+        [
+          "1985-03-15"
+        ],
+        [
+          "1990-12-01"
+        ]
+      ],
+      "items": {
+        "type": "string"
+      },
+      "title": "Date Of Birth",
+      "type": "array"
+    },
+    "citizenship": {
+      "default": [],
+      "description": "If entity type is a person, countries where the person holds citizenship or nationality.",
+      "examples": [
+        [
+          "United States",
+          "Canada"
+        ],
+        [
+          "United Kingdom"
+        ]
+      ],
+      "items": {
+        "type": "string"
+      },
+      "title": "Citizenship",
+      "type": "array"
+    },
+    "place_of_birth": {
+      "default": [],
+      "description": "If entity type is a person, city and country where the person was born.",
+      "examples": [
+        [
+          "New York, United States"
+        ],
+        [
+          "London, United Kingdom"
+        ]
+      ],
+      "items": {
+        "type": "string"
+      },
+      "title": "Place Of Birth",
+      "type": "array"
+    },
+    "deceased": {
+      "default": [],
+      "description": "If entity type is a person, indication if the person is deceased, or date of death.",
+      "examples": [
+        [
+          true
+        ],
+        [
+          false
+        ]
+      ],
+      "items": {
+        "type": "boolean"
+      },
+      "title": "Deceased",
+      "type": "array"
+    },
+    "id_numbers": {
+      "default": [],
+      "description": "If entity type is a person, a list of identification documents that are owned by the subject.",
+      "examples": [
+        [
+          {
+            "number": "ABC123",
+            "type": "Passport"
+          }
+        ]
+      ],
+      "items": {
+        "$ref": "#/$defs/IDNumber"
+      },
+      "title": "Id Numbers",
+      "type": "array"
+    },
+    "domicile": {
+      "default": [],
+      "description": "If entity type is a person, the legal home or permanent residence of the person.",
+      "examples": [
+        [
+          {
+            "end_date": "2024-12-31",
+            "location": "London, UK",
+            "start_date": "2020-01-01"
+          }
+        ]
+      ],
+      "items": {
+        "$ref": "#/$defs/Location"
+      },
+      "title": "Domicile",
+      "type": "array"
+    },
+    "addresses": {
+      "default": [],
+      "description": "If entity type is a person, known physical addresses associated with the person.",
+      "examples": [
+        [
+          {
+            "end_date": "2022-08-15",
+            "location": "123 Main St, New York, NY",
+            "start_date": "2018-06-01"
+          }
+        ]
+      ],
+      "items": {
+        "$ref": "#/$defs/Location"
+      },
+      "title": "Addresses",
+      "type": "array"
+    },
+    "roles_primary_occupation": {
+      "default": [],
+      "description": "If entity type is a person, the current or most significant professional roles/employment held by the person.",
+      "examples": [
+        [
+          {
+            "end_date": "2024-12-31",
+            "institution": "Tech Corp",
+            "start_date": "2020-01-01",
+            "title": "CEO"
+          }
+        ]
+      ],
+      "items": {
+        "$ref": "#/$defs/Occupation"
+      },
+      "title": "Roles Primary Occupation",
+      "type": "array"
+    },
+    "roles_history_occupation": {
+      "default": [],
+      "description": "If entity type is a person, past employment history of the person.",
+      "examples": [
+        [
+          {
+            "end_date": "2019-12-31",
+            "institution": "Old Company",
+            "start_date": "2015-03-01",
+            "title": "Manager"
+          }
+        ]
+      ],
+      "items": {
+        "$ref": "#/$defs/Occupation"
+      },
+      "title": "Roles History Occupation",
+      "type": "array"
+    },
+    "associated_entities": {
+      "default": [],
+      "description": "Companies or organizations linked to the person.",
+      "examples": [
+        [
+          {
+            "name": "Subsidiary Inc",
+            "relation": "Parent Company"
+          }
+        ]
+      ],
+      "items": {
+        "$ref": "#/$defs/Relation"
+      },
+      "title": "Associated Entities",
+      "type": "array"
+    },
+    "associated_persons": {
+      "default": [],
+      "description": "Natural persons (family, business partners) linked to the person. The relation field describes the nature of the relationship.",
+      "examples": [
+        [
+          {
+            "name": "Jane Doe",
+            "relation": "Spouse"
+          },
+          {
+            "name": "Bob Smith",
+            "relation": "Business Partner"
+          }
+        ]
+      ],
+      "items": {
+        "$ref": "#/$defs/Relation"
+      },
+      "title": "Associated Persons",
+      "type": "array"
+    },
+    "date_of_incorporation": {
+      "default": [],
+      "description": "If entity type is a company/organization, the date it was legally formed.",
+      "examples": [
+        [
+          "2010-06-15"
+        ],
+        [
+          "1995-01-20"
+        ]
+      ],
+      "items": {
+        "type": "string"
+      },
+      "title": "Date Of Incorporation",
+      "type": "array"
+    },
+    "country_of_incorporation": {
+      "default": [],
+      "description": "If entity type is a company/organization, the jurisdiction under whose laws it was formed.",
+      "examples": [
+        [
+          "Delaware, United States"
+        ],
+        [
+          "Cayman Islands"
+        ]
+      ],
+      "items": {
+        "type": "string"
+      },
+      "title": "Country Of Incorporation",
+      "type": "array"
+    },
+    "country_of_affiliation": {
+      "default": [],
+      "description": "If entity type is a company/organization, countries where the entity operates or has significant ties.", 
+      "examples": [
+        [
+          "United States",
+          "United Kingdom",
+          "Singapore"
+        ]
+      ],
+      "items": {
+        "type": "string"
+      },
+      "title": "Country Of Affiliation",
+      "type": "array"
+    },
+    "local_name": {
+      "default": [],
+      "description": "The name of the entity in its local language/script.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Local Name",
+      "type": "array"
+    },
+    "marital_status": {
+      "default": [],
+      "description": "Marital status of the person.",
+      "examples": [
+        [
+          "Single"
+        ],
+        [
+          "Married"
+        ]
+      ],
+      "items": {
+        "type": "string"
+      },
+      "title": "Marital Status",
+      "type": "array"
+    },
+    "free_text": {
+      "default": [],
+      "description": "Unstructured text related to the entity.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Free Text",
+      "type": "array"
+    }
+  },
+  "title": "EntityProfile",
+  "type": "object"
+}

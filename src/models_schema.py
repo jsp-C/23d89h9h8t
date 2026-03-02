@@ -182,7 +182,14 @@ class MediaEntityProfile(StrictBaseModel):
     url: Optional[str] = Field(default=None, description="The URL link to the news article. Omit or set null if not present.")
     themes: List[str] = Field(default_factory=list, description="Key themes or topics associated with the news article (e.g., 'Bribery and Corruption', 'Financial Crime', 'Predicate Crime').")
 
-class WatchlistEntityProfile(StrictBaseModel):
+class WatchlistBasicInfo(StrictBaseModel):
+    id: str = Field(..., description="Unique identifier for the watchlist entry. (Risk Profile ID (RPID))")
+    name: str = Field(..., description="Primary name of the watchlist main subject")
+    nameMatchScore: int = Field(default=None, description="A score representing the similarity between the news entity's name and the watchlist entity's name (0-100).")
+    flags: List[str] = Field(description="Any relevant flags or designations associated with the watchlist entity")
+
+
+class WatchlistEntityProfile(WatchlistBasicInfo):
     id: str = Field(..., description="Unique identifier for the watchlist entry. (Risk Profile ID (RPID))")
     name: str = Field(..., description="Primary name of the watchlist main subject")
     nameMatchScore: int = Field(default=None, description="A score representing the similarity between the news entity's name and the watchlist entity's name (0-100).")

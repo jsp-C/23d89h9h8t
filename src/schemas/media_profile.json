@@ -1,0 +1,54 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "headline": {
+      "description": "The headline of the news article mentioning the entity.",
+      "title": "Headline",
+      "type": "string"
+    },
+    "content": {
+      "description": "The full text content of the news article mentioning the entity.",
+      "title": "Content",
+      "type": "string"
+    },
+    "date": {
+      "description": "The publication date of the news article in ISO 8601 format (YYYY-MM-DD).",
+      "title": "Date",
+      "type": "string"
+    },
+    "source": {
+      "description": "The source or publisher of the news article.",
+      "title": "Source",
+      "type": "string"
+    },
+    "url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The URL link to the news article. Omit or set null if not present.",
+      "title": "Url"
+    },
+    "themes": {
+      "description": "Key themes or topics associated with the news article (e.g., 'Bribery and Corruption', 'Financial Crime', 'Predicate Crime').",
+      "items": {
+        "type": "string"
+      },
+      "title": "Themes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "headline",
+    "content",
+    "date",
+    "source"
+  ],
+  "title": "MediaEntityProfile",
+  "type": "object"
+}

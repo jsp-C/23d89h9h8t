@@ -1,0 +1,45 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Unique identifier for the watchlist entry. (Risk Profile ID (RPID))",
+      "title": "Id",
+      "type": "string"
+    },
+    "name": {
+      "description": "Primary name of the watchlist main subject",
+      "title": "Name",
+      "type": "string"
+    },
+    "nameMatchScore": {
+      "default": null,
+      "description": "A score representing the similarity between the news entity's name and the watchlist entity's name (0-100).",
+      "title": "Namematchscore",
+      "type": "integer"
+    },
+    "flags": {
+      "description": "Any relevant flags or designations associated with the watchlist entity",
+      "items": {
+        "type": "string"
+      },
+      "title": "Flags",
+      "type": "array"
+    },
+    "watchlist": {
+      "description": "The specific watchlist(s) on which this entity appears (e.g., '[SIP] CCDI Wanted List', '[SIP] Interpol Red Notices').",
+      "items": {
+        "type": "string"
+      },
+      "title": "Watchlist",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "flags",
+    "watchlist"
+  ],
+  "title": "WatchlistBasicInfo",
+  "type": "object"
+}
