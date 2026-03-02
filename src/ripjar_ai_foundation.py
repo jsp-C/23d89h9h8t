@@ -1,4 +1,3 @@
-import asyncio
 import functools
 import json
 import logging
@@ -18,14 +17,10 @@ from typing import Any, List, Optional, Literal, TypeVar
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# COMPLIANCE WATCHLIST RISK PROFILE EXTRACTION
-# 
-# Extracts structured compliance data from watchlist risk profiles using a
-# hybrid pipeline of regex and LLM-based extraction. Schemas are loaded from
-# JSON files for consistency with the data models.
+# Config
 # ═══════════════════════════════════════════════════════════════════════════
 load_dotenv()
-FILE_NAME = "raw4"  # Change this to test different files in assets/
+FILE_NAME = "raw1"  # Change this to test different files in assets/
 
 AI_URL = "https://models.github.ai/inference"
 API_KEY = os.getenv("OPENAI_API_KEY")
@@ -208,7 +203,7 @@ class WatchlistBasicInfo(StrictBaseModel):
     name: str = Field(..., description="Primary name of the watchlist main subject")
     nameMatchScore: int = Field(default=None, description="A score representing the similarity between the news entity's name and the watchlist entity's name (0-100).")
     flags: List[str] = Field(
-        description="Any relevant flags or designations associated with the watchlist entity",
+        description="Any relevant flags or designations associated with the watchlist entity.",
         examples=[["MEDIA", "SANCTIONS"], ["UBR"], ["SAN", "MEDIA", "SIP"]]
     )
     watchlist: List[str] = Field(description="The specific watchlist(s) on which this entity appears (e.g., '[SIP] CCDI Wanted List', '[SIP] Interpol Red Notices').")
@@ -259,10 +254,10 @@ def _count_tokens(text: str, model: str = "gpt-4o") -> int:
 def log_token_usage(fn):
     """Decorator that logs estimated prompt and response token counts."""
     @functools.wraps(fn)
-    async def wrapper(prompt: str) -> str:
+    def wrapper(prompt: str) -> str:
         prompt_tokens = _count_tokens(prompt)
         logger.debug(f"[tokens] prompt: {prompt_tokens:,}")
-        response = await fn(prompt)
+        response = fn(prompt)
         response_tokens = _count_tokens(response)
         logger.debug(f"[tokens] response: {response_tokens:,}  |  total: {prompt_tokens + response_tokens:,}")
         return response
@@ -272,15 +267,18 @@ def log_token_usage(fn):
 # FLAG NORMALIZATION
 # ═══════════════════════════════════════════════════════════════════════════
 
-# Maps badge label text (as it appears in the document) → camelCase flag code.
+# Maps badge label text. Keys must be uppercased.
 FLAG_LABEL_MAP: dict[str, str] = {
-    "edd scap": "eddScap",
-    "edd":      "eddScap",
-    "sip":      "sip",
-    "media":    "media",
-    "pep":      "pep",
-    "ubr":      "ubr",
-    "ool":      "ool",
+    "EDD SCAP": "eddScap",
+    "EDD SCAP PEP": "eddScapPep",
+    "EDD":      "eddScap",
+    "SIP":      "sip",
+    "MEDIA":    "media",
+    "UBR":      "ubr",
+    "OOL":      "ool",
+    "SANCTIONS": "sanctions",
+    "SAN":       "san",
+    "RCA":       "rca",
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -405,7 +403,7 @@ def _clear_type_exclusive_fields(profile: EntityProfile) -> EntityProfile:
 
 
 
-async def extract_watchlist_names(profile_text: str) -> list[str]:
+def extract_watchlist_names(profile_text: str) -> list[str]:
     """
     Extract watchlist names from the Watchlists table.
     """
@@ -419,10 +417,10 @@ async def extract_watchlist_names(profile_text: str) -> list[str]:
     if wl_section_match:
         section = wl_section_match.group(1)
         logger.debug(f"Watchlists section content (first 500 chars):\n{section[:500]}")
-        watchlists = await extract_watchlists_with_llm(section)
+        watchlists = extract_watchlists_with_llm(section)
     return watchlists
 
-async def regex_extract_profile_fields(profile_text: str) -> dict[str, Any]:
+def     regex_extract_profile_fields(profile_text: str, flags_text: str) -> dict[str, Any]:
     """
     Extract deterministic fields from profile text using regex, avoiding LLM
     guesswork for structured markers.
@@ -435,7 +433,7 @@ async def regex_extract_profile_fields(profile_text: str) -> dict[str, Any]:
     if m := re.search(r'RPID:\s*([a-z0-9][a-z0-9-]+)', profile_text, re.IGNORECASE):
         result["id"] = m.group(1).strip()
 
-    # Primary profile name and capitalize first letter of each word (line after "Name:" label — not inside tables)
+    # Primary profile name and capitalize first letter of each word (line after "Name:" label — assuming wrapped in <p> tags)
     if m := re.search(r'<p>\s*Name:\s*(.*?)\s*</p>', profile_text, re.IGNORECASE):
         result["name"] = m.group(1).strip().title()
 
@@ -443,14 +441,17 @@ async def regex_extract_profile_fields(profile_text: str) -> dict[str, Any]:
     if m := re.search(r'Match Score:\s*(\d+)\s*%', profile_text, re.IGNORECASE):
         result["nameMatchScore"] = int(m.group(1))
 
-    # Flags — iteratively look for known badge labels appearing as standalone <p> tags
+    # Flags — iteratively look for known badge labels appearing as standalone tags or pipe-separated
     found_flags: list[str] = []
+    # Sort by length (longest first) to prevent shorter patterns from matching first
+    sorted_keys = sorted(FLAG_LABEL_MAP.keys(), key=len, reverse=True)
+    # Pattern handles both standalone tags and pipe-separated formats: "MEDIA | SANCTIONS | UBR"
     badge_pattern = re.compile(
-        r'\s*(' + '|'.join(re.escape(k) for k in FLAG_LABEL_MAP) + r')\s*',
+        r'\s*\|?\s*(' + '|'.join(re.escape(k) for k in sorted_keys) + r')\s*\|?\s*',
         re.IGNORECASE,
     )
-    for m in badge_pattern.finditer(profile_text):
-        label = m.group(1).strip().lower()
+    for m in badge_pattern.finditer(flags_text):
+        label = m.group(1).strip().upper() # Normalize to uppercase for consistent mapping
         code = FLAG_LABEL_MAP.get(label)
         if code and code not in found_flags:
             found_flags.append(code)
@@ -465,11 +466,11 @@ async def regex_extract_profile_fields(profile_text: str) -> dict[str, Any]:
 # ═══════════════════════════════════════════════════════════════════════════
 
 @log_token_usage
-async def fetch_llm_response(prompt: str) -> str:
+def fetch_llm_response(prompt: str) -> str:
     """Send request to LLM and return raw response."""
-    return await fetch_openai_llm_response(prompt)
+    return fetch_openai_llm_response(prompt)
 
-async def fetch_openai_llm_response(prompt: str) -> str:
+def fetch_openai_llm_response(prompt: str) -> str:
     """Send request to OpenAI-compatible LLM and return raw response."""
     def _call_openai():
         response = openai_client.chat.completions.create(
@@ -479,14 +480,14 @@ async def fetch_openai_llm_response(prompt: str) -> str:
         logger.debug(f"Full LLM response object:\n{response}")
         return response.choices[0].message.content
     
-    return await asyncio.to_thread(_call_openai)
+    return _call_openai()
 
-async def query_llm_object(prompt: str, model_class: type[T], max_retries: int = 2) -> T:
+def query_llm_object(prompt: str, model_class: type[T], max_retries: int = 2) -> T:
     """
     Send prompt to LLM and parse as a Pydantic model (JSON object).
     On ValidationError, feeds the error back to the LLM for one correction attempt.
     """
-    raw_response = await fetch_llm_response(prompt)
+    raw_response = fetch_llm_response(prompt)
     logger.debug(f"Raw LLM response:\n{raw_response}")
     json_str = extract_json_from_text(raw_response)
 
@@ -505,19 +506,19 @@ async def query_llm_object(prompt: str, model_class: type[T], max_retries: int =
                 f"Do not change fields that were already valid.\n\n"
                 f"Previous JSON:\n{json_str}"
             )
-            raw_response = await fetch_llm_response(correction_prompt)
+            raw_response = fetch_llm_response(correction_prompt)
             logger.debug(f"Correction LLM response:\n{raw_response}")
             json_str = extract_json_from_text(raw_response)
 
     raise RuntimeError("Unreachable")  # pragma: no cover
 
-async def query_llm_array(prompt: str, item_class: type[T] | None = None, max_retries: int = 2) -> list[T] | list[Any]:
+def query_llm_array(prompt: str, item_class: type[T] | None = None, max_retries: int = 2) -> list[T] | list[Any]:
     """
     Send prompt to LLM and parse as a list of Pydantic model instances (JSON array).
     If item_class is None, returns raw list items without validation.
     On ValidationError, feeds the error back to the LLM for one correction attempt.
     """
-    raw_response = await fetch_llm_response(prompt)
+    raw_response = fetch_llm_response(prompt)
     logger.debug(f"Raw LLM response:\n{raw_response}")
     json_str = extract_json_array_from_text(raw_response)
 
@@ -542,7 +543,7 @@ async def query_llm_array(prompt: str, item_class: type[T] | None = None, max_re
                 f"Return the corrected JSON array only.\n\n"
                 f"Previous JSON:\n{json_str}"
             )
-            raw_response = await fetch_llm_response(correction_prompt)
+            raw_response = fetch_llm_response(correction_prompt)
             logger.debug(f"Correction LLM response:\n{raw_response}")
             json_str = extract_json_array_from_text(raw_response)
 
@@ -553,7 +554,7 @@ async def query_llm_array(prompt: str, item_class: type[T] | None = None, max_re
 # EXTRACTION FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════════
 
-async def extract_profile_fields_with_llm(profile_text: str) -> WatchlistBasicInfo:
+def extract_profile_fields_with_llm(profile_text: str) -> WatchlistBasicInfo:
     """
     Extract profile fields
     """
@@ -580,11 +581,11 @@ EXTRACTION RULES:
 
 OUTPUT: A single JSON object only, no surrounding text.
 """
-    fields = await query_llm_object(prompt, WatchlistBasicInfo)
+    fields = query_llm_object(prompt, WatchlistBasicInfo)
     return fields
 
 @retry(stop=stop_after_attempt(3), retry_error_callback=lambda s: (logger.error(f"extract_watchlist_data_with_llm failed after {s.attempt_number()} attempts: {s.outcome().exception()}", None)[1]))
-async def extract_watchlist_data_with_llm(profile_text: str) -> list[EntityProfile]:
+def extract_watchlist_data_with_llm(profile_text: str) -> list[EntityProfile]:
     """Extract EntityProfile fields from the risk-profile section."""
 
     schema = json.dumps(ENTITY_PROFILE_SCHEMA, indent=2)
@@ -621,12 +622,12 @@ EXTRACTION RULES:
 
 OUTPUT: A single JSON object only, no surrounding text.
 """
-    profile = await query_llm_object(prompt, EntityProfile)
+    profile = query_llm_object(prompt, EntityProfile)
     profile = _clear_type_exclusive_fields(profile)
     return [profile]
 
 @retry(stop=stop_after_attempt(3), retry_error_callback=lambda s: (logger.error(f"extract_media_data_with_llm failed after {s.attempt_number()} attempts: {s.outcome().exception()}", None)[1]))
-async def extract_media_data_with_llm(news_text: str) -> list[MediaEntityProfile]:
+def extract_media_data_with_llm(news_text: str) -> list[MediaEntityProfile]:
     """Extract MediaEntityProfile items from the full news articles section."""
     schema = json.dumps(MEDIA_ENTITY_PROFILE_SCHEMA, indent=2)
     prompt = f"""You are extracting structured news article data from a compliance report's news section.
@@ -646,7 +647,7 @@ EXTRACTION RULES:
 3. date: Publication date in ISO 8601 (YYYY-MM-DD). Parse from "published DD Mon YYYY" or "DD Sep YYYY" patterns.
 4. source: Publisher name from the "Source: <name>" line. Strip the date part.
 5. url: Extract the URL for each article from its own content (e.g. a line starting with "http" or a labelled "URL:" field within the article).
-   If no URL is found for an article, omit the field or set it to null.
+   If no URL or no relevant link is found pointing to the article, omit the field or set it to null.
 6. themes: Collect ALL standalone theme label lines within the article body 
    (e.g. a line "Bribery and Corruption, Financial Crime" → ["Bribery and Corruption", "Financial Crime"]).
    Split comma-separated themes into individual strings.
@@ -654,10 +655,10 @@ EXTRACTION RULES:
 
 OUTPUT: A JSON array [...] only, no surrounding text.
 """
-    return await query_llm_array(prompt, MediaEntityProfile)
+    return query_llm_array(prompt, MediaEntityProfile)
 
 @retry(stop=stop_after_attempt(3), retry_error_callback=lambda s: (logger.error(f"extract_watchlists_with_llm failed after {s.attempt_number()} attempts: {s.outcome().exception()}", None)[1]))
-async def extract_watchlists_with_llm(watchlist_free_text: str) -> list[str]:
+def extract_watchlists_with_llm(watchlist_free_text: str) -> list[str]:
     """Extract watchlist names from the Watchlists section using LLM, as a fallback if regex fails."""
     prompt = f"""You are extracting watchlist names from a compliance report's Watchlists section.
 WATCHLISTS SECTION:
@@ -672,14 +673,14 @@ EXAMPLE OUTPUT:
 
 OUTPUT: A JSON array [...] only, no surrounding text.
 """
-    response = await query_llm_array(prompt)
+    response = query_llm_array(prompt)
     return response
 
 # ═══════════════════════════════════════════════════════════════════════════
 # MAIN ORCHESTRATOR
 # ═══════════════════════════════════════════════════════════════════════════
 
-async def extract_data(profile_text: str, news_text: str) -> WatchlistEntityProfile:
+def extract_data(profile_text: str, flags_text: str, news_text: str) -> WatchlistEntityProfile:
     """
     3-phase pipeline:
       1. Regex-extract deterministic fields (RPID, score, flags).
@@ -688,15 +689,15 @@ async def extract_data(profile_text: str, news_text: str) -> WatchlistEntityProf
       4. LLM-extract structured fields separately for news.
     """
     # ── Phase 1: Regex pre-extraction ────────────────────────────────────
-    regex_fields = await regex_extract_profile_fields(profile_text)
+    regex_fields = regex_extract_profile_fields(profile_text, flags_text)
     # logger.debug(f"Regex-extracted fields:\n{json.dumps(regex_fields, indent=2)}"); return
-
+    
     # ── Phase 2: If regex fails to find any watchlist attributes, try LLM extraction as a fallback
-    fields = await extract_profile_fields_with_llm(profile_text)
+    fields = extract_profile_fields_with_llm(profile_text)
     # logger.debug(f"Watchlist attributes extracted via LLM:\n{json.dumps(fields, indent=2)}"); return
     
     # ── Phase 3: LLM extraction for profile ──────────────────────────────────────────
-    watchlist_data = await extract_watchlist_data_with_llm(profile_text)
+    watchlist_data = extract_watchlist_data_with_llm(profile_text)
     
     # Post-process aliases to split Latin vs local script names into aliases vs local_name fields, based on character script detection
     watchlist_data = [
@@ -710,14 +711,14 @@ async def extract_data(profile_text: str, news_text: str) -> WatchlistEntityProf
     # ── Phase 4: LLM extraction for news ─────────────────────────────────────────────
     media_data: list[MediaEntityProfile] = []
     if news_text.strip():
-        media_data = await extract_media_data_with_llm(news_text)
+        media_data = extract_media_data_with_llm(news_text)
 
     # ── Compose final result ─────────────────────────────────────────────
     result = WatchlistEntityProfile(
         id             = regex_fields.get("id", fields.id if fields else ""),
         name           = regex_fields.get("name", fields.name if fields else ""),
         nameMatchScore = regex_fields.get("nameMatchScore", fields.nameMatchScore if fields else None),
-        flags          =  fields.flags if fields else [],
+        flags          = regex_fields.get("flags", fields.flags if fields else []),
         # flags          = regex_fields.get("flags", fields.flags if fields else []),
         watchlist      = fields.watchlist if fields and fields.watchlist else [],
         watchlist_data = watchlist_data,
@@ -753,6 +754,84 @@ def save_with_timestamp(result: dict[str, Any], base_path: str) -> str:
 # FILE I/O UTILITIES
 # ═══════════════════════════════════════════════════════════════════════════
 
+
+def split_profiles(input_file: str) -> list[dict[str, Any]]:
+    """
+    Split the input JSON file by person.
+    
+    Args:
+        input_file: Path to the input JSON file (e.g., 'raw1.json')
+        output_dir: Directory to output the split JSON files
+    """
+    # Read the input JSON file
+    with open(input_file, 'r', encoding='utf-8') as f:
+        pages = json.load(f)
+    
+    # Skip first 5 pages (index 0-4), start from page 6 (index 5)
+    pages = pages[5:]
+    
+    # Patterns to identify person section (these keywords appear anywhere in the page)
+    person_section_keywords = ['Risk Profiles, published', 'Type: Watchlist']
+    
+    # Extract person name from beginning of page - two formats:
+    # Format (with <p> tags): "<p>Fang Liu</p><p>MEDIA</p>..."
+    name_pattern_with_tags = r'^\n?<p>([^<]+)</p>'
+    
+    current_person = None
+    current_person_pages = []
+    persons_data = []
+    
+    for page in pages:
+        page_text = page.get('page_text', '')
+        page_number = page.get('page_number', '')
+        
+        # Try to extract person name from beginning of page - try both formats
+        person_name = None
+        
+        # Try format 1: with <p> tags
+        name_match = re.match(name_pattern_with_tags, page_text)
+        if name_match:
+            person_name = name_match.group(1)
+            print(f"Page {page_number}: Format matched - {person_name}")
+
+        
+        # Check if this page is a new person section
+        # (has a name at beginning AND contains person section keywords)
+        is_new_person = False
+        if person_name:
+            for keyword in person_section_keywords:
+                if keyword in page_text:
+                    is_new_person = True
+                    break
+        print(f"Page {page_number}: person_name={person_name}, is_new_person={is_new_person}")
+        
+        if is_new_person:
+            # Save previous person's data if exists
+            if current_person and current_person_pages:
+                persons_data.append({
+                    'person_name': current_person,
+                    'pages': current_person_pages
+                })
+            
+            # Start new person
+            current_person = person_name
+            current_person_pages = [page]
+        else:
+            # Add page to current person's data
+            if current_person:
+                current_person_pages.append(page)
+    
+    # Add the last person
+    if current_person and current_person_pages:
+        persons_data.append({
+            'person_name': current_person,
+            'pages': current_person_pages
+        })
+    
+    return persons_data
+
+
+
 def load_pages(file_path: str) -> list[dict]:
     """Load pages from a JSON file or wrap an HTML file as a single page."""
     if file_path.endswith('.html'):
@@ -761,6 +840,15 @@ def load_pages(file_path: str) -> list[dict]:
     else:
         with open(file_path, "r", encoding="utf-8") as f:
             return json.load(f)
+
+def load_flags_text(full_text: str) -> str:
+    """Extract the flags section text (between beginning of the full text and 'Risk Profile' headers) from full text. Fallback to full text if markers not found."""
+    match = re.search(
+        r'^(.*?)Risk Profiles,',
+        full_text,
+        re.DOTALL,
+    )
+    return match.group(1).strip() if match else full_text
 
 def load_profile_text(full_text: str) -> str:
     """Extract the profile section text (up to 'Full news articles' header) from full text. Fallback to full text if marker not found."""
@@ -784,35 +872,21 @@ def load_news_text(full_text: str) -> str:
 # ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════
 
-async def main() -> None:
-    """Test the watchlist extraction pipeline."""
-
-    # Uncomment to print schema only:
-    # logger.debug(generate_schema(WatchlistEntityProfile)); return
-
-    assets_dir = Path(__file__).parent.parent / "assets"
+def run_for_each_profile(profile: dict[str, Any]) -> None:
+    """Run the extraction pipeline for each profile in the list."""
     output_dir = Path(__file__).parent.parent / "output"
-    input_file = assets_dir / f"{FILE_NAME}.json"
-    output_file = output_dir / f"output/{FILE_NAME}_new.json"
-
+    name = profile["person_name"]
+    output_file = output_dir / f"output/{name.replace(' ', '_')}_{FILE_NAME}_new.json"
     # Ensure output directory exists
     output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    if not input_file.exists():
-        logger.error(f"Input file not found: {input_file}")
-        return
-
-    logger.debug(f"Starting conversion: {input_file}")
-
+    
     try:
-        pages = load_pages(str(input_file))
-        full_html = _join_pages(pages)
-        profile_text, news_text = load_profile_text(full_html), load_news_text(full_html)
+        full_html = _join_pages(profile["pages"])
+        profile_text, flags_text, news_text = load_profile_text(full_html), load_flags_text(full_html), load_news_text(full_html)
         # profile_text, news_text = sanitize_html(profile_text), sanitize_html(news_text)
-        result = await extract_data(profile_text, news_text)
+        result = extract_data(profile_text, flags_text, news_text)
         result = serialize(result)
         saved_path = save_with_timestamp(result, output_file)
-        logger.debug(f"Successfully converted: {input_file} -> {saved_path}")
 
         # Load and print the saved result for verification 
         with open(saved_path, "r", encoding="utf-8") as f:
@@ -823,5 +897,25 @@ async def main() -> None:
     except Exception as e:
         logger.error(f"Conversion failed: {e}", exc_info=True)
 
+def main() -> None:
+    """Test the watchlist extraction pipeline."""
+
+    # Uncomment to print schema only:
+    # logger.debug(generate_schema(WatchlistEntityProfile)); return
+
+    assets_dir = Path(__file__).parent.parent / "assets"
+
+    input_file = assets_dir / f"{FILE_NAME}.json"
+    if not input_file.exists():
+        logger.error(f"Input file not found: {input_file}")
+        return
+    # Load the full text from the input file to extract list of profiles
+    list_of_profiles = split_profiles(str(input_file))
+
+    logger.debug(f"Starting conversion: {input_file}")
+    
+    for profile in list_of_profiles:
+        run_for_each_profile(profile)
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
