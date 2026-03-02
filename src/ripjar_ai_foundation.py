@@ -225,14 +225,6 @@ class WatchlistEntityProfile(WatchlistBasicInfo):
 # ═══════════════════════════════════════════════════════════════════════════
 # SCHEMA MANAGEMENT
 # ═══════════════════════════════════════════════════════════════════════════
-SCHEMA_DIR = Path(__file__).parent / "schemas"
-
-def load_schema(schema_name: str) -> dict:
-    """Load JSON schema from file."""
-    schema_file = SCHEMA_DIR / f"{schema_name}.json"
-    with open(schema_file, 'r') as f:
-        return json.load(f)
-    
 def create_schema_from_pydantic(model: type[BaseModel]) -> dict:
     """Generate JSON schema from Pydantic models."""
     return model.model_json_schema()
