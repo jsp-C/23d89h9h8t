@@ -23,7 +23,8 @@
         "type": "string"
       },
       "title": "Flags",
-      "type": "array"
+      "type": "array",
+      "examples": [["MEDIA","SANCTIONS"], ["UBR"], ["SAN", "MEDIA","SIP"]]
     },
     "watchlist": {
       "description": "The specific watchlist(s) on which this entity appears (e.g., '[SIP] CCDI Wanted List', '[SIP] Interpol Red Notices').",

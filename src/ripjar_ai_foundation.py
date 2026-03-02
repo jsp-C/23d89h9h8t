@@ -9,7 +9,6 @@ from pathlib import Path
 import regex
 import tiktoken
 from tenacity import retry, stop_after_attempt
-from bs4 import BeautifulSoup, Tag
 from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError
 from pydantic.fields import FieldInfo
@@ -49,22 +48,6 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 openai_client = OpenAI(
     base_url=AI_URL,
 )
-
-# ═══════════════════════════════════════════════════════════════════════════
-# SCHEMA MANAGEMENT
-# ═══════════════════════════════════════════════════════════════════════════
-SCHEMA_DIR = Path(__file__).parent / "schemas"
-
-def load_schema(schema_name: str) -> dict:
-    """Load JSON schema from file."""
-    schema_file = SCHEMA_DIR / f"{schema_name}.json"
-    with open(schema_file, 'r') as f:
-        return json.load(f)
-
-# Load schemas
-WATCHLIST_BASIC_SCHEMA = load_schema("watchlist_basic")
-ENTITY_PROFILE_SCHEMA = load_schema("entity_profile")
-MEDIA_ENTITY_PROFILE_SCHEMA = load_schema("media_profile")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # PYDANTIC DATA MODELS
@@ -237,6 +220,28 @@ class WatchlistEntityProfile(WatchlistBasicInfo):
     watchlist_data: List[EntityProfile] = Field(default_factory=list, description="Additional structured data from the watchlist entry that may be relevant for matching.")
     media_data: List[MediaEntityProfile] = Field(default_factory=list, description="Associated media articles that mention this watchlist entity.")
     
+    
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SCHEMA MANAGEMENT
+# ═══════════════════════════════════════════════════════════════════════════
+SCHEMA_DIR = Path(__file__).parent / "schemas"
+
+def load_schema(schema_name: str) -> dict:
+    """Load JSON schema from file."""
+    schema_file = SCHEMA_DIR / f"{schema_name}.json"
+    with open(schema_file, 'r') as f:
+        return json.load(f)
+    
+def create_schema_from_pydantic(model: type[BaseModel]) -> dict:
+    """Generate JSON schema from Pydantic models."""
+    return model.model_json_schema()
+
+# Load schemas
+WATCHLIST_BASIC_SCHEMA = create_schema_from_pydantic(WatchlistBasicInfo)
+ENTITY_PROFILE_SCHEMA = create_schema_from_pydantic(EntityProfile)
+MEDIA_ENTITY_PROFILE_SCHEMA = create_schema_from_pydantic(MediaEntityProfile)
+    
 
 # ═══════════════════════════════════════════════════════════════════════════
 # HELPER & UTILITY FUNCTIONS
@@ -300,43 +305,6 @@ def serialize(val: Any) -> Any:
         return val.model_dump(by_alias=True)
     return val
 
-def get_simple_type_str(annotation) -> str:
-    """Get simple type string for schema."""
-    from typing import get_origin, get_args
-    origin = get_origin(annotation)
-    if origin is list:
-        inner = get_args(annotation)[0]
-        if hasattr(inner, '__name__'):
-            return f"array of {inner.__name__}s"
-        else:
-            return f"array of {get_simple_type_str(inner)}s"
-    elif hasattr(annotation, '__name__'):
-        if annotation.__name__ == 'str':
-            return 'string'
-        elif annotation.__name__ == 'int':
-            return 'int'
-        else:
-            return annotation.__name__
-    else:
-        return str(annotation)
-    
-def get_example_value(field: FieldInfo) -> str:
-    """Get example value for a type annotation."""
-    examples = field.examples if field.examples else []
-    return f"{examples[0]}" if examples else ""
-    # example_str = f", e.g. {examples[0]}" if examples else ""
-    # return example_str
-
-def get_description(field: FieldInfo) -> str:
-    """Get description from field info."""
-    return field.description or ""
-
-# ═══════════════════════════════════════════════════════════════════════════
-# NOTE: generate_schema(), get_simple_type_str(), and get_example_value() 
-# are no longer used since schemas are now loaded from JSON files.
-# Keeping them for backward compatibility only.
-# ═══════════════════════════════════════════════════════════════════════════
-
 # ═══════════════════════════════════════════════════════════════════════════
 # JSON EXTRACTION & PARSING
 # ═══════════════════════════════════════════════════════════════════════════
@@ -366,44 +334,6 @@ def extract_json_array_from_text(text: str) -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 # HTML / TEXT PROCESSING
 # ═══════════════════════════════════════════════════════════════════════════
-
-def _table_to_pipe_text(table: Tag) -> str:
-    """Convert a BeautifulSoup <table> element to pipe-delimited plain text."""
-    rows = []
-    for tr in table.find_all("tr"):
-        cells = [cell.get_text(separator=" ", strip=True) for cell in tr.find_all(["th", "td"])]
-        rows.append(" | ".join(cells))
-    return "\n".join(rows)
-
-
-def sanitize_html(html: str) -> str:
-    """
-    Convert HTML to clean plain text while preserving table structure
-    as pipe-delimited rows. Strips page-break / footer / header markers.
-    """
-    # Strip page-level HTML comments before parsing
-    html = re.sub(
-        r'<!--\s*Page(?:Break|Footer|Header)[^>]*-->',
-        '',
-        html,
-        flags=re.IGNORECASE,
-    )
-
-    soup = BeautifulSoup(html, "html.parser")
-
-    # Replace each <table> with its pipe-delimited representation
-    for table in soup.find_all("table"):
-        pipe_text = _table_to_pipe_text(table)
-        table.replace_with(f"\n{pipe_text}\n")
-
-    text = soup.get_text(separator="\n", strip=True)
-
-    # Collapse excess whitespace
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    text = re.sub(r' {2,}', ' ', text)
-
-    return text.strip()
-
 
 def _join_pages(pages: list[dict]) -> str:
     """Concatenate raw page_text values from a page list."""
@@ -661,7 +591,7 @@ OUTPUT: A single JSON object only, no surrounding text.
     fields = await query_llm_object(prompt, WatchlistBasicInfo)
     return fields
 
-@retry(stop=stop_after_attempt(3), retry_error_callback=lambda s: (logger.error(f"Extract watchlist data failed after {s.attempt_number()} attempts: {s.outcome().exception()}", None)[1]))
+@retry(stop=stop_after_attempt(3), retry_error_callback=lambda s: (logger.error(f"extract_watchlist_data_with_llm failed after {s.attempt_number()} attempts: {s.outcome().exception()}", None)[1]))
 async def extract_watchlist_data_with_llm(profile_text: str) -> list[EntityProfile]:
     """Extract EntityProfile fields from the risk-profile section."""
 
@@ -703,7 +633,7 @@ OUTPUT: A single JSON object only, no surrounding text.
     profile = _clear_type_exclusive_fields(profile)
     return [profile]
 
-@retry(stop=stop_after_attempt(3), retry_error_callback=lambda s: (logger.error(f"Extract media data failed after {s.attempt_number()} attempts: {s.outcome().exception()}", None)[1]))
+@retry(stop=stop_after_attempt(3), retry_error_callback=lambda s: (logger.error(f"extract_media_data_with_llm failed after {s.attempt_number()} attempts: {s.outcome().exception()}", None)[1]))
 async def extract_media_data_with_llm(news_text: str) -> list[MediaEntityProfile]:
     """Extract MediaEntityProfile items from the full news articles section."""
     schema = json.dumps(MEDIA_ENTITY_PROFILE_SCHEMA, indent=2)
@@ -734,7 +664,7 @@ OUTPUT: A JSON array [...] only, no surrounding text.
 """
     return await query_llm_array(prompt, MediaEntityProfile)
 
-@retry(stop=stop_after_attempt(3), retry_error_callback=lambda s: (logger.error(f"Extract watchlists failed after {s.attempt_number()} attempts: {s.outcome().exception()}", None)[1]))
+@retry(stop=stop_after_attempt(3), retry_error_callback=lambda s: (logger.error(f"extract_watchlists_with_llm failed after {s.attempt_number()} attempts: {s.outcome().exception()}", None)[1]))
 async def extract_watchlists_with_llm(watchlist_free_text: str) -> list[str]:
     """Extract watchlist names from the Watchlists section using LLM, as a fallback if regex fails."""
     prompt = f"""You are extracting watchlist names from a compliance report's Watchlists section.
@@ -761,19 +691,17 @@ async def extract_data(profile_text: str, news_text: str) -> WatchlistEntityProf
     """
     3-phase pipeline:
       1. Regex-extract deterministic fields (RPID, score, flags).
-      2. LLM-extract watchlist names from Watchlists table.
+      2. LLM-extract watchlist attributes.
       3. LLM-extract structured fields separately for profile.
       4. LLM-extract structured fields separately for news.
     """
     # ── Phase 1: Regex pre-extraction ────────────────────────────────────
     regex_fields = await regex_extract_profile_fields(profile_text)
-    fields = await extract_profile_fields_with_llm(profile_text)
     # logger.debug(f"Regex-extracted fields:\n{json.dumps(regex_fields, indent=2)}"); return
-    # logger.debug(f"profile_text:\n{profile_text}"); return
 
-    # ── Phase 2: If regex fails to find any watchlist names, try LLM extraction as a fallback
-    # watchlist = await extract_watchlist_names(profile_text)
-    # logger.debug(f"Watchlist names extracted via regex:\n{json.dumps(watchlist, indent=2)}"); return
+    # ── Phase 2: If regex fails to find any watchlist attributes, try LLM extraction as a fallback
+    fields = await extract_profile_fields_with_llm(profile_text)
+    # logger.debug(f"Watchlist attributes extracted via LLM:\n{json.dumps(fields, indent=2)}"); return
     
     # ── Phase 3: LLM extraction for profile ──────────────────────────────────────────
     watchlist_data = await extract_watchlist_data_with_llm(profile_text)
@@ -793,9 +721,6 @@ async def extract_data(profile_text: str, news_text: str) -> WatchlistEntityProf
         media_data = await extract_media_data_with_llm(news_text)
 
     # ── Compose final result ─────────────────────────────────────────────
-    # Pull top-level fields from regex (authoritative) or watchlist_data as fallbacks
-    # entity = watchlist_data[0] if watchlist_data else EntityProfile()
-
     result = WatchlistEntityProfile(
         id             = regex_fields.get("id", fields.id if fields else ""),
         name           = regex_fields.get("name", fields.name if fields else ""),
@@ -818,10 +743,10 @@ def save_with_timestamp(result: dict[str, Any], base_path: str) -> str:
     """Save result to JSON file with timestamp in output/ folder to avoid overwrite."""
     from datetime import datetime
 
-    output_dir = Path(base_path).parent / "output"
+    output_dir = Path(base_path)
     output_dir.mkdir(exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     filename = f"{Path(base_path).stem}_{timestamp}.json"
     output_path = output_dir / filename
 
@@ -863,21 +788,6 @@ def load_news_text(full_text: str) -> str:
     )
     return full_text[match.end():] if match else ""
 
-async def convert_file(input_path: str) -> WatchlistEntityProfile:
-    """Convert a single input file (HTML or JSON) to target JSON format using LLM with fallbacks."""
-    try:
-        pages = load_pages(input_path)
-        full_html = _join_pages(pages)
-        profile_text, news_text = load_profile_text(full_html), load_news_text(full_html)
-        # profile_text, news_text = sanitize_html(profile_text), sanitize_html(news_text)
-        result = await extract_data(profile_text, news_text)
-        serialized_result = serialize(result)
-        return serialized_result
-
-    except Exception as e:
-        logger.error(f"Conversion failed for {input_path}: {e}", exc_info=True)
-        raise
-
 # ═══════════════════════════════════════════════════════════════════════════
 # ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════
@@ -890,9 +800,8 @@ async def main() -> None:
 
     assets_dir = Path(__file__).parent.parent / "assets"
     output_dir = Path(__file__).parent.parent / "output"
-    # input_file = assets_dir / f"{FILE_NAME}.json"
     input_file = assets_dir / f"{FILE_NAME}.json"
-    output_file = output_dir / f"ripjar/{FILE_NAME}_new.json"
+    output_file = output_dir / f"output/{FILE_NAME}_new.json"
 
     # Ensure output directory exists
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -904,7 +813,12 @@ async def main() -> None:
     logger.debug(f"Starting conversion: {input_file}")
 
     try:
-        result = await convert_file(str(input_file))
+        pages = load_pages(str(input_file))
+        full_html = _join_pages(pages)
+        profile_text, news_text = load_profile_text(full_html), load_news_text(full_html)
+        # profile_text, news_text = sanitize_html(profile_text), sanitize_html(news_text)
+        result = await extract_data(profile_text, news_text)
+        result = serialize(result)
         saved_path = save_with_timestamp(result, output_file)
         logger.debug(f"Successfully converted: {input_file} -> {saved_path}")
 
