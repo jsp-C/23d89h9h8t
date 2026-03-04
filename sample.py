@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from openai import OpenAI
 import json
+import re
 
 client = OpenAI()
 
@@ -53,90 +54,65 @@ def call_llm(prompt: str, pydantic_model: BaseModel) -> BaseModel:
     pass    
 
 
-
-
-def is_valid_article(raw_article: str) -> bool:
+def split_articles_by_source(html_text: str) -> List[dict]:
     """
-    Validate that raw_article contains exactly one 'Source: ' marker.
-    Split by 'Source: ', if len == 2, it's valid.
-    """
+    Deterministically split HTML text into articles by 'Source: ' markers.
+    Number of 'Source: ' occurrences = number of articles.
 
-    parts = raw_article.split("Source: ")
-
-    # Must split into exactly two parts: before Source and after Source
-    return len(parts) == 2
-
-
-def split_multiple_articles_spans_only(free_text: str) -> List[ArticleSpan]:
-    """
-    Original splitter, but returns spans instead of text.
-    """
-    prompt = f"""
-You are a news splitter.
-The input may contain multiple news articles.
-Each article must contain at least headline, source, and date.
-Return character start/end positions for each article.
-Do NOT rewrite or summarize any text.
-
-Text to analyze:
-{free_text}
-
-Output schema:
-{json.dumps(MultiArticleSplitResult.model_json_schema())}
-    """
-
-    response = call_llm(prompt, MultiArticleSplitResult)
-    return response.articles
-
-def split_multiple_articles(free_text: str) -> List[str]:
-    """
-    Detect multiple articles and return raw text chunks.
-    """
-    prompt = f"""
-You are a news splitter.
-The input may contain multiple news articles.
-Each article must contain at least headline, source, and date.
-Return character start/end positions for each article.
-Do NOT rewrite or summarize any text.
-
-Text to analyze:
-{free_text}
-
-Output schema:
-{json.dumps(MultiArticleSplitResult.model_json_schema())}
-
-Output:
-    """
+    For each 'Source: ':
+      - info:    from the <p> before Source (headline) to the </p> after Source (source+date)
+      - content: from after source's </p> to the <p> before the next article's headline
     
-    response = call_llm(prompt, MultiArticleSplitResult)
-    spans = response.articles
-    # deterministic slicing
-    articles = [free_text[s.start:s.end] for s in spans if 0 <= s.start < s.end <= len(free_text)]
-    return articles
+    Returns list of dicts: {'info': str, 'content': str, 'full_text': str}
+    """
+    source_positions = [m.start() for m in re.finditer(r'Source: ', html_text)]
 
+    if not source_positions:
+        return []
 
+    articles = []
 
-def split_multiple_articles_with_overlap(free_text: str, overlap: int = 50):
-    raw_articles = []
-    spans = split_multiple_articles_spans_only(free_text) 
+    for i, src_pos in enumerate(source_positions):
+        # --- INFO SECTION ---
+        # Find the <p> that contains "Source: "
+        source_p_start = html_text.rfind('<p>', 0, src_pos)
 
-    for i, s in enumerate(spans):
-        start = max(0, s.start - overlap)
-        end = s.end
-        article_text = free_text[start:end]
-
-        # Check if Source: exists
-        if not is_valid_article(article_text) and i > 0:
-            # Prepend last line of previous article
-            prev_last_line = raw_articles[-1].splitlines()[-1]
-            article_text = prev_last_line + "\n" + article_text
-
-        if is_valid_article(article_text):
-            raw_articles.append(article_text)
+        # Find the <p> before that — the headline's <p>
+        if source_p_start > 0:
+            headline_p_start = html_text.rfind('<p>', 0, source_p_start)
         else:
-            print(f"[WARN] Article #{i+1} still invalid after overlap fix")
+            headline_p_start = -1
 
-    return raw_articles
+        # Info start: headline <p>, or fallback to -80 buffer
+        info_start = headline_p_start if headline_p_start >= 0 else max(0, src_pos - 80)
+
+        # Info end: </p> after Source: (closes the source+date <p>)
+        source_p_end = html_text.find('</p>', src_pos)
+        info_end = source_p_end + len('</p>') if source_p_end >= 0 else src_pos + 80
+
+        # --- CONTENT SECTION ---
+        content_start = info_end
+
+        if i + 1 < len(source_positions):
+            # Content goes up to the <p> before the next Source's headline
+            next_src_pos = source_positions[i + 1]
+            next_source_p = html_text.rfind('<p>', 0, next_src_pos)
+            if next_source_p > 0:
+                next_headline_p = html_text.rfind('<p>', 0, next_source_p)
+            else:
+                next_headline_p = -1
+
+            content_end = next_headline_p if next_headline_p > content_start else next_src_pos
+        else:
+            content_end = len(html_text)
+
+        articles.append({
+            'info': html_text[info_start:info_end],
+            'content': html_text[content_start:content_end],
+            'full_text': html_text[info_start:content_end],
+        })
+
+    return articles
 
     
 def split_info_and_content(article_text: str) -> ArticleSections:
@@ -226,29 +202,23 @@ Output:
 
 def process_multi_article_text_with_url(free_text: str) -> List[FinalArticle]:
 
-    raw_articles = split_multiple_articles_with_overlap(free_text, overlap=50)
+    split_results = split_articles_by_source(free_text)
 
     final_articles = []
 
-    for idx, article_text in enumerate(raw_articles):
+    for idx, split in enumerate(split_results):
+        info_section = split['info']
+        content_section = split['content']
+        full_text = split['full_text']
 
-        if not is_valid_article(article_text):
-            print(f"[WARN] Skipping invalid article #{idx+1}")
-            continue
-
-        # Step 1: Split info vs content
-        sections = split_info_and_content(article_text)
-        info_section = article_text[sections.info_start:sections.info_end]
-        content_section = article_text[sections.content_start:sections.content_end]
-
-        # Step 2: Extract headline/source/date
+        # Step 1: Extract headline/source/date from info
         info = extract_article_info(info_section)
 
-        # Step 3: Extract theme labels
+        # Step 2: Extract theme labels from content
         themes = extract_theme_labels(content_section)
 
-        # Step 4: Extract article URL from full text
-        url = extract_article_url(article_text)
+        # Step 3: Extract article URL from full text
+        url = extract_article_url(full_text)
 
         final_articles.append(FinalArticle(
             headline=info.headline,
