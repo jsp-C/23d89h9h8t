@@ -66,6 +66,28 @@ def is_valid_article(raw_article: str) -> bool:
     # Must split into exactly two parts: before Source and after Source
     return len(parts) == 2
 
+
+def split_multiple_articles_spans_only(free_text: str) -> List[ArticleSpan]:
+    """
+    Original splitter, but returns spans instead of text.
+    """
+    prompt = f"""
+You are a news splitter.
+The input may contain multiple news articles.
+Each article must contain at least headline, source, and date.
+Return character start/end positions for each article.
+Do NOT rewrite or summarize any text.
+
+Text to analyze:
+{free_text}
+
+Output schema:
+{json.dumps(MultiArticleSplitResult.model_json_schema())}
+    """
+
+    response = call_llm(prompt, MultiArticleSplitResult)
+    return response.articles
+
 def split_multiple_articles(free_text: str) -> List[str]:
     """
     Detect multiple articles and return raw text chunks.
@@ -93,9 +115,10 @@ Output:
     return articles
 
 
+
 def split_multiple_articles_with_overlap(free_text: str, overlap: int = 50):
     raw_articles = []
-    spans = split_multiple_articles(free_text)  # original LLM split
+    spans = split_multiple_articles_spans_only(free_text) 
 
     for i, s in enumerate(spans):
         start = max(0, s.start - overlap)
