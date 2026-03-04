@@ -53,6 +53,8 @@ def call_llm(prompt: str, pydantic_model: BaseModel) -> BaseModel:
     pass    
 
 
+
+
 def is_valid_article(raw_article: str) -> bool:
     """
     Validate that raw_article contains exactly one 'Source: ' marker.
@@ -90,6 +92,28 @@ Output:
     articles = [free_text[s.start:s.end] for s in spans if 0 <= s.start < s.end <= len(free_text)]
     return articles
 
+
+def split_multiple_articles_with_overlap(free_text: str, overlap: int = 50):
+    raw_articles = []
+    spans = split_multiple_articles(free_text)  # original LLM split
+
+    for i, s in enumerate(spans):
+        start = max(0, s.start - overlap)
+        end = s.end
+        article_text = free_text[start:end]
+
+        # Check if Source: exists
+        if not is_valid_article(article_text) and i > 0:
+            # Prepend last line of previous article
+            prev_last_line = raw_articles[-1].splitlines()[-1]
+            article_text = prev_last_line + "\n" + article_text
+
+        if is_valid_article(article_text):
+            raw_articles.append(article_text)
+        else:
+            print(f"[WARN] Article #{i+1} still invalid after overlap fix")
+
+    return raw_articles
 
     
 def split_info_and_content(article_text: str) -> ArticleSections:
@@ -178,6 +202,9 @@ Output:
     return response.url
 
 def process_multi_article_text_with_url(free_text: str) -> List[FinalArticle]:
+
+    raw_articles = split_multiple_articles_with_overlap(free_text, overlap=50)
+
     final_articles = []
 
     raw_articles = split_multiple_articles(free_text)
