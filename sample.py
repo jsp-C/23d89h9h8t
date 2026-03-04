@@ -55,26 +55,14 @@ def call_llm(prompt: str, pydantic_model: BaseModel) -> BaseModel:
 
 def is_valid_article(raw_article: str) -> bool:
     """
-    Validate that raw_article matches the pattern:
-        headline (any text)
-        Source: <source>
-        date (any text, optional check)
+    Validate that raw_article contains exactly one 'Source: ' marker.
+    Split by 'Source: ', if len == 2, it's valid.
     """
 
-    # Remove empty lines
-    lines = [line.strip() for line in raw_article.splitlines() if line.strip()]
-    
-    if len(lines) < 2:
-        return False  # Must have at least headline + source
+    parts = raw_article.split("Source: ")
 
-    headline_line = lines[0]
-    source_line = lines[1]
-
-    # Source must start with "Source: "
-    if not source_line.startswith("Source: "):
-        return False
-
-    return True
+    # Must split into exactly two parts: before Source and after Source
+    return len(parts) == 2
 
 def split_multiple_articles(free_text: str) -> List[str]:
     """
