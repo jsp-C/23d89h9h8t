@@ -207,8 +207,6 @@ def process_multi_article_text_with_url(free_text: str) -> List[FinalArticle]:
 
     final_articles = []
 
-    raw_articles = split_multiple_articles(free_text)
-
     for idx, article_text in enumerate(raw_articles):
 
         if not is_valid_article(article_text):
