@@ -1,6 +1,7 @@
 import re
 import logging
 import json
+from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 from datetime import datetime
 from typing import List, Optional
@@ -163,6 +164,175 @@ class MediaCollection(BaseModel):
     articles: List[Media] = Field(default_factory=list, description="List of news articles found in the text.")
 
 # ============================================================
+# VALIDATION & QUALITY SCORING
+# ============================================================
+
+CONFIDENCE_THRESHOLD = 0.7
+
+_ISO_DATE_RE = re.compile(r'^\d{4}(-\d{2}(-\d{2})?)?$')
+
+_PEP_KEYWORDS = [
+    "minister", "president", "senator", "governor", "parliament",
+    "mayor", "ambassador", "secretary", "chancellor", "director general",
+]
+_SANCTIONS_KEYWORDS = ["sanctions", "sanctioned", "ofac", "sdn", "blacklist", "blacklisted"]
+_EDD_KEYWORDS = [
+    "money laundering", "bribery", "corruption", "fraud",
+    "terrorist", "terrorism", "pep", "politically exposed",
+]
+
+
+def _is_valid_date(date_str: str) -> bool:
+    """Return True if date_str matches YYYY, YYYY-MM, or YYYY-MM-DD."""
+    return bool(_ISO_DATE_RE.match(date_str))
+
+
+@dataclass
+class ValidationIssue:
+    field: str
+    severity: str   # "critical" | "warning"
+    message: str
+
+
+@dataclass
+class ValidationReport:
+    issues: List[ValidationIssue] = dc_field(default_factory=list)
+    has_critical_issues: bool = False
+    flags: List[str] = dc_field(default_factory=list)  # PEP, SANCTIONS, EDD
+
+    def add_issue(self, field: str, severity: str, message: str) -> None:
+        self.issues.append(ValidationIssue(field=field, severity=severity, message=message))
+        if severity == "critical":
+            self.has_critical_issues = True
+
+    def to_dict(self) -> dict:
+        return {
+            "issues": [
+                {"field": i.field, "severity": i.severity, "message": i.message}
+                for i in self.issues
+            ],
+            "has_critical_issues": self.has_critical_issues,
+            "flags": self.flags,
+        }
+
+
+def _detect_compliance_flags(profile: EntityProfile) -> List[str]:
+    """Return compliance flags (PEP, SANCTIONS_FLAG, EDD_INDICATOR) found in the profile."""
+    text_parts = (
+        profile.type
+        + profile.primary_name
+        + [f"{o.title} {o.institution}" for o in profile.roles_primary_occupation]
+        + [f"{o.title} {o.institution}" for o in profile.roles_history_occupation]
+    )
+    all_text = " ".join(text_parts).lower()
+
+    flags: List[str] = []
+    if any(kw in all_text for kw in _PEP_KEYWORDS):
+        flags.append("PEP_INDICATOR")
+    if any(kw in all_text for kw in _SANCTIONS_KEYWORDS):
+        flags.append("SANCTIONS_FLAG")
+    if any(kw in all_text for kw in _EDD_KEYWORDS):
+        flags.append("EDD_INDICATOR")
+    return flags
+
+
+def validate_profile(profile: EntityProfile) -> ValidationReport:
+    """Validate an extracted EntityProfile against data quality rules."""
+    report = ValidationReport()
+
+    if not profile.type:
+        report.add_issue("type", "critical", "Entity type is missing")
+    if not profile.primary_name:
+        report.add_issue("primary_name", "critical", "Primary name is missing")
+
+    for dob in profile.date_of_birth:
+        if not _is_valid_date(dob):
+            report.add_issue("date_of_birth", "warning", f"Invalid date format: '{dob}'")
+    for doi in profile.date_of_incorporation:
+        if not _is_valid_date(doi):
+            report.add_issue("date_of_incorporation", "warning", f"Invalid date format: '{doi}'")
+    for occ in profile.roles_primary_occupation + profile.roles_history_occupation:
+        if occ.start_date and not _is_valid_date(occ.start_date):
+            report.add_issue("occupation.start_date", "warning", f"Invalid date format: '{occ.start_date}'")
+        if occ.end_date and not _is_valid_date(occ.end_date):
+            report.add_issue("occupation.end_date", "warning", f"Invalid date format: '{occ.end_date}'")
+    for loc in profile.domicile + profile.addresses:
+        if loc.start_date and not _is_valid_date(loc.start_date):
+            report.add_issue("location.start_date", "warning", f"Invalid date format: '{loc.start_date}'")
+        if loc.end_date and not _is_valid_date(loc.end_date):
+            report.add_issue("location.end_date", "warning", f"Invalid date format: '{loc.end_date}'")
+
+    report.flags = _detect_compliance_flags(profile)
+    return report
+
+
+def score_profile(profile: EntityProfile) -> float:
+    """Calculate a confidence score (0.0–1.0) based on field completeness."""
+    is_org = "Organization" in profile.type
+
+    if is_org:
+        weighted = [
+            (bool(profile.type), 0.15),
+            (bool(profile.primary_name), 0.25),
+            (bool(profile.date_of_incorporation), 0.15),
+            (bool(profile.country_of_incorporation), 0.15),
+            (bool(profile.country_of_affiliation), 0.10),
+            (bool(profile.aliases), 0.05),
+            (bool(profile.associated_entities) or bool(profile.associated_persons), 0.10),
+            (bool(profile.id_numbers), 0.05),
+        ]
+    else:
+        # Person (default)
+        weighted = [
+            (bool(profile.type), 0.15),
+            (bool(profile.primary_name), 0.20),
+            (bool(profile.date_of_birth), 0.15),
+            (bool(profile.citizenship), 0.10),
+            (bool(profile.gender), 0.05),
+            (bool(profile.place_of_birth), 0.05),
+            (bool(profile.aliases), 0.05),
+            (bool(profile.roles_primary_occupation) or bool(profile.roles_history_occupation), 0.10),
+            (bool(profile.addresses) or bool(profile.domicile), 0.05),
+            (bool(profile.id_numbers), 0.10),
+        ]
+
+    return round(min(sum(w for present, w in weighted if present), 1.0), 3)
+
+
+def validate_article(article: Media) -> ValidationReport:
+    """Validate an extracted Media article against data quality rules."""
+    report = ValidationReport()
+
+    if not article.headline.strip():
+        report.add_issue("headline", "critical", "Article headline is missing")
+    if not article.content.strip():
+        report.add_issue("content", "critical", "Article content is missing")
+    if not article.source.strip():
+        report.add_issue("source", "warning", "Article source is missing")
+    if not article.date.strip():
+        report.add_issue("date", "critical", "Article date is missing")
+    elif not _is_valid_date(article.date):
+        report.add_issue("date", "warning", f"Invalid date format: '{article.date}'")
+    if not article.themes:
+        report.add_issue("themes", "warning", "No themes extracted")
+
+    return report
+
+
+def score_article(article: Media) -> float:
+    """Calculate a confidence score (0.0–1.0) for an extracted article."""
+    weighted = [
+        (bool(article.headline.strip()), 0.25),
+        (bool(article.content.strip()), 0.25),
+        (bool(article.date.strip()) and _is_valid_date(article.date), 0.20),
+        (bool(article.source.strip()), 0.15),
+        (bool(article.themes), 0.10),
+        (bool(article.url), 0.05),
+    ]
+    return round(min(sum(w for present, w in weighted if present), 1.0), 3)
+
+
+# ============================================================
 # ENTERPRISE EXTRACTOR
 # ============================================================
 
@@ -212,10 +382,11 @@ class EnterpriseExtractor:
     # PROFILE EXTRACTION
     # --------------------------------------------------------
 
-    def extract_profile(self, text: str) -> EntityProfile:
+    def extract_profile(self, text: str) -> dict:
             """
-            Extract full profile in a single LLM call.
-            Assumes entire text is about one entity.
+            Extract full profile in a single LLM call, then validate and score.
+            Retries up to MAX_RETRIES times with validation feedback when confidence is low.
+            Returns a dict with the profile data, quality metrics, and processing history.
             """
             
             system_prompt =  """You are extracting structured compliance data from a watchlist risk profile section.
@@ -254,33 +425,101 @@ OUTPUT: A single JSON object only, no surrounding text.
             {EntityProfile.model_json_schema()}
             """
 
-            last_exception = None
+            processing_history: List[dict] = []
+            last_profile: Optional[EntityProfile] = None
+            last_report: Optional[ValidationReport] = None
+            last_score: float = 0.0
+            validation_feedback: str = ""
 
-            for _ in range(self.MAX_RETRIES):
+            for attempt in range(self.MAX_RETRIES):
                 try:
+                    current_system = system_prompt
+                    if validation_feedback:
+                        current_system = (
+                            system_prompt
+                            + f"\n\nVALIDATION FEEDBACK FROM PREVIOUS ATTEMPT (attempt {attempt + 1}):\n"
+                            + validation_feedback
+                            + "\nPlease address these issues in your extraction."
+                        )
+
                     profile = self.call_llm(
                         messages=[
-                            {"role": "system", "content": system_prompt},
+                            {"role": "system", "content": current_system},
                             {"role": "user", "content": user_prompt}
                         ],
                         response_format=EntityProfile
                     )
 
-                    return profile
+                    report = validate_profile(profile)
+                    score = score_profile(profile)
+
+                    attempt_record = {
+                        "attempt": attempt + 1,
+                        "confidence_score": score,
+                        "issues_found": len(report.issues),
+                        "has_critical_issues": report.has_critical_issues,
+                        "compliance_flags": report.flags,
+                    }
+                    processing_history.append(attempt_record)
+                    logger.debug(
+                        f"Profile extraction attempt {attempt + 1}: "
+                        f"score={score}, issues={len(report.issues)}, flags={report.flags}"
+                    )
+
+                    last_profile = profile
+                    last_report = report
+                    last_score = score
+
+                    if score >= CONFIDENCE_THRESHOLD and not report.has_critical_issues:
+                        return {
+                            "data": profile.model_dump(),
+                            "confidence_score": score,
+                            "validation_report": report.to_dict(),
+                            "quality_gate_passed": True,
+                            "flagged_for_manual_review": False,
+                            "processing_history": processing_history,
+                        }
+
+                    # Build feedback for next retry
+                    if report.issues:
+                        validation_feedback = "\n".join(
+                            f"- [{i.severity.upper()}] {i.field}: {i.message}"
+                            for i in report.issues
+                        )
 
                 except Exception as e:
-                    last_exception = e
                     logger.warning(f"Profile extraction retry due to error: {e}")
+                    processing_history.append({"attempt": attempt + 1, "error": str(e)})
 
-            raise ValueError(f"Profile extraction failed after retries: {last_exception}")
+            if last_profile is None:
+                raise ValueError(f"Profile extraction failed after {self.MAX_RETRIES} retries")
+
+            quality_gate_passed = last_score >= CONFIDENCE_THRESHOLD and not last_report.has_critical_issues
+            flagged_for_manual_review = last_report.has_critical_issues or not quality_gate_passed
+
+            logger.warning(
+                f"Profile quality gate {'passed' if quality_gate_passed else 'FAILED'} "
+                f"(score={last_score}). Flagged for manual review: {flagged_for_manual_review}"
+            )
+
+            return {
+                "data": last_profile.model_dump(),
+                "confidence_score": last_score,
+                "validation_report": last_report.to_dict(),
+                "quality_gate_passed": quality_gate_passed,
+                "flagged_for_manual_review": flagged_for_manual_review,
+                "processing_history": processing_history,
+            }
 
     # ========================================================
     # TIER-1 ARTICLE PIPELINE
     # ========================================================
 
-    def extract_articles(self, article_text: str) -> List[Media]:
+    def extract_articles(self, article_text: str) -> List[dict]:
         """
-        Extract all articles from the given text in a single LLM call.
+        Extract all articles from the given text with validation and confidence scoring.
+        Retries the batch if overall quality is below the confidence threshold.
+        Returns a list of dicts, each containing the article data and quality metrics.
         """
         if not article_text.strip():
             return []
@@ -314,15 +553,85 @@ SCHEMA:
 {MediaCollection.model_json_schema()}
 """
 
-        response = self.call_llm(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            response_format=MediaCollection
-        )
+        processing_history: List[dict] = []
+        last_results: Optional[List[dict]] = None
+        validation_feedback: str = ""
 
-        return response.articles if response.articles else []
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                current_system = system_prompt
+                if validation_feedback:
+                    current_system = (
+                        system_prompt
+                        + f"\n\nVALIDATION FEEDBACK FROM PREVIOUS ATTEMPT (attempt {attempt + 1}):\n"
+                        + validation_feedback
+                        + "\nPlease address these issues in your extraction."
+                    )
+
+                response = self.call_llm(
+                    messages=[
+                        {"role": "system", "content": current_system},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    response_format=MediaCollection
+                )
+
+                articles = response.articles if response.articles else []
+
+                # Validate and score each article
+                results = []
+                all_issues: List[str] = []
+                for article in articles:
+                    report = validate_article(article)
+                    score = score_article(article)
+                    quality_gate_passed = score >= CONFIDENCE_THRESHOLD and not report.has_critical_issues
+                    results.append({
+                        "data": article.model_dump(),
+                        "confidence_score": score,
+                        "validation_report": report.to_dict(),
+                        "quality_gate_passed": quality_gate_passed,
+                    })
+                    if report.issues:
+                        all_issues += [
+                            f"- [{i.severity.upper()}] {article.headline[:40]!r} → {i.field}: {i.message}"
+                            for i in report.issues
+                        ]
+
+                passed = sum(1 for r in results if r["quality_gate_passed"])
+                total = len(results)
+                avg_score = round(sum(r["confidence_score"] for r in results) / total, 3) if total else 0.0
+
+                attempt_record = {
+                    "attempt": attempt + 1,
+                    "articles_extracted": total,
+                    "articles_passed": passed,
+                    "average_confidence_score": avg_score,
+                    "issues_found": len(all_issues),
+                }
+                processing_history.append(attempt_record)
+                logger.debug(
+                    f"Article extraction attempt {attempt + 1}: "
+                    f"{passed}/{total} passed, avg_score={avg_score}"
+                )
+
+                last_results = results
+
+                if avg_score >= CONFIDENCE_THRESHOLD:
+                    break
+
+                # Build feedback for next retry
+                if all_issues:
+                    validation_feedback = "\n".join(all_issues[:20])  # cap feedback size
+
+            except Exception as e:
+                logger.warning(f"Article extraction retry due to error: {e}")
+                processing_history.append({"attempt": attempt + 1, "error": str(e)})
+
+        if last_results is None:
+            return []
+
+        # Attach processing history to first article record for traceability
+        return last_results
 
     # ========================================================
     # FINAL OUTPUT
@@ -332,12 +641,35 @@ SCHEMA:
 
         profile_text, article_text = self.split_sections(full_text)
 
-        profile = self.extract_profile(profile_text)
-        articles = self.extract_articles(article_text)
+        profile_result = self.extract_profile(profile_text)
+        article_results = self.extract_articles(article_text)
+
+        articles_passed = sum(1 for a in article_results if a.get("quality_gate_passed", False))
+        articles_total = len(article_results)
+        avg_article_score = (
+            round(sum(a["confidence_score"] for a in article_results) / articles_total, 3)
+            if articles_total else 0.0
+        )
+
+        quality_summary = {
+            "overall_quality_gate_passed": (
+                profile_result["quality_gate_passed"]
+                and (articles_total == 0 or articles_passed == articles_total)
+            ),
+            "profile_confidence_score": profile_result["confidence_score"],
+            "profile_quality_gate_passed": profile_result["quality_gate_passed"],
+            "profile_flagged_for_manual_review": profile_result["flagged_for_manual_review"],
+            "compliance_flags": profile_result["validation_report"].get("flags", []),
+            "articles_processed": articles_total,
+            "articles_passed_quality_gate": articles_passed,
+            "articles_failed_quality_gate": articles_total - articles_passed,
+            "average_article_confidence_score": avg_article_score,
+        }
 
         return {
-            "watchlist_data": profile.model_dump(),
-            "media_data": [a.model_dump() for a in articles]
+            "watchlist_data": profile_result,
+            "media_data": article_results,
+            "quality_summary": quality_summary,
         }
 
 
